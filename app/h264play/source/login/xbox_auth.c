@@ -422,6 +422,18 @@ static int cmp_title(const void *a, const void *b) {
     return c ? c : strcmp(x->id, y->id);
 }
 
+static int cmp_browse(const void *a, const void *b) {
+    const xa_title_t *x = (const xa_title_t *)a, *y = (const xa_title_t *)b;
+    int px = xa_playable(x), py = xa_playable(y);
+    return px != py ? py - px : cmp_title(a, b);
+}
+
+int xa_browse_prepare(xa_title_t *t, int n) {
+    if (!t || n <= 0) return 0;
+    qsort(t, (size_t)n, sizeof(*t), cmp_browse);
+    return n < XA_BROWSE_MAX ? n : XA_BROWSE_MAX;
+}
+
 int xa_finalize(xa_title_t *t, int n) {
     int k = 0;
     for (int i = 0; i < n; i++) if (xa_playable(&t[i])) t[k++] = t[i];
@@ -498,7 +510,7 @@ int xa_fetch_names(xa_title_t *t, int n, void (*progress)(int, int), xc_err_t *e
         if (xcn_now_ms() - started >= name_budget_ms) break;
         int m = 0;
         for (int i = 0; i < n; i++) {
-            if (!xa_playable(&t[i]) || t[i].name[0] || !t[i].product[0]) continue;
+            if (t[i].name[0] || !t[i].product[0]) continue;
             int dup = 0;   /* vários títulos podem ter o mesmo produto */
             for (int k = 0; k < m; k++) if (!strcmp(t[idx[k]].product, t[i].product)) { dup = 1; break; }
             if (!dup) idx[m++] = i;
