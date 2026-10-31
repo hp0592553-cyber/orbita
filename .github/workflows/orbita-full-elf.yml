@@ -49,6 +49,9 @@ jobs:
           docker run --rm -v "$PWD:/app" -w /app -e DEVKITXENON=/usr/local/xenon \
             free60/libxenon:latest /bin/bash -eo pipefail -c '
               export PATH=/usr/local/xenon/bin:/usr/local/xenon/usr/bin:$PATH
+              # Arquivos do checkout sao do runner; root no container precisa marcar como confiaveis.
+              git config --global --add safe.directory /app/.orbita-ci/opus-src
+              git config --global --add safe.directory /app/.orbita-ci/ffmpeg
               echo "=== Free60 compiler ==="
               xenon-gcc --version | head -n 1
               echo "=== FFmpeg 0.10.2 Xenon ==="
