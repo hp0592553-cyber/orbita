@@ -146,7 +146,16 @@ jobs:
           tail -n 90 reports/build.log
           if [ "$rc" -eq 0 ] && [ -s app/h264play/h264play.elf32 ]; then
             cp app/h264play/h264play.elf32 reports/orbita-beta0.elf32
-            sha256sum reports/orbita-beta0.elf32 > reports/orbita-beta0.sha256
+            # Keep a matching unstripped image and link map to resolve
+            # console exception SRR0/LR addresses to exact functions.
+            cp app/h264play/h264play.elf reports/orbita-beta0-debug.elf
+            link_map="$(find app/h264play -type f -name 'h264play.elf.map' -print -quit)"
+            if [ -n "$link_map" ] && [ -s "$link_map" ]; then
+              cp "$link_map" reports/orbita-beta0-link.map
+            else
+              echo "WARNING: link map not found" > reports/map-warning.txt
+            fi
+            sha256sum reports/orbita-beta0.elf32 reports/orbita-beta0-debug.elf > reports/orbita-beta0.sha256
             echo "COMPILACAO_REAL_OK" > reports/status.txt
           else
             echo "COMPILACAO_INCOMPLETA (exit=$rc) - ver build.log" > reports/status.txt
