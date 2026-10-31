@@ -28,6 +28,15 @@ jobs:
           .orbita-ci/python/bin/python app/h264play/tools/gen_xui_assets.py app/h264play/source/ui/xui_assets.h
           git clone --quiet --depth 1 --branch n0.10.2 https://github.com/FFmpeg/FFmpeg.git .orbita-ci/ffmpeg
           git clone --quiet --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git .orbita-ci/opus-src
+          # Fonte libpeer fixada, sem credenciais; patch portado do green-nx.
+          git init -q .orbita-ci/libpeer
+          git -C .orbita-ci/libpeer remote add origin https://github.com/sepfy/libpeer.git
+          git -C .orbita-ci/libpeer fetch --quiet --depth 1 origin 9319aa434cb9e893faed0293ba9d2a21eca59c8b
+          git -C .orbita-ci/libpeer checkout -q FETCH_HEAD
+          git -C .orbita-ci/libpeer submodule update --init --recursive --depth 1
+          curl -fsSL --retry 2 https://raw.githubusercontent.com/rmrf404/green-nx/main/deps/patches/libpeer-switch.patch -o .orbita-ci/libpeer-switch.patch
+          git -C .orbita-ci/libpeer apply --check ../libpeer-switch.patch
+          git -C .orbita-ci/libpeer apply ../libpeer-switch.patch
           test -s app/h264play/source/ui/xui_assets.h
 
       - name: Testar HTTPS publico do servidor oficial (sem autenticar)
@@ -52,6 +61,9 @@ jobs:
               # Arquivos do checkout sao do runner; root no container precisa marcar como confiaveis.
               git config --global --add safe.directory /app/.orbita-ci/opus-src
               git config --global --add safe.directory /app/.orbita-ci/ffmpeg
+              git config --global --add safe.directory /app/.orbita-ci/libpeer
+              git config --global --add safe.directory /app/.orbita-ci/libpeer/third_party/usrsctp
+              git config --global --add safe.directory /app/.orbita-ci/libpeer/third_party/libsrtp
               echo "=== Free60 compiler ==="
               xenon-gcc --version | head -n 1
               echo "=== FFmpeg 0.10.2 Xenon ==="
@@ -78,8 +90,13 @@ jobs:
               cd /app
               OPUS_SRC=/app/.orbita-ci/opus-src OPUS_OUT=/app/.orbita-ci/opus-xenon J=2 \
                 bash deps/build-opus-xenon.sh
+              echo "=== WebRTC e TLS Xenon ==="
+              if ! command -v python3 >/dev/null 2>&1; then
+                apt-get update -qq && apt-get install -y -qq python3
+              fi
+              LIBPEER_DIR=/app/.orbita-ci/libpeer OUTROOT=/app/.orbita-ci/webrtc-xenon \
+                bash deps/webrtc-xenon/build.sh xenon
               echo "=== Orbita BETA=0 ==="
-              echo "Cliente original exige biblioteca WebRTC Xenon previamente compilada."
               rm -f app/h264play/h264play.elf app/h264play/h264play.elf32
               make -C app/h264play clean
               make -C app/h264play -j2 BETA=0 AUDIO=1 GPU=0 \
