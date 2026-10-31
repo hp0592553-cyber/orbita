@@ -351,6 +351,14 @@ static int has_line(const char *l) {
     return 0;
 }
 
+/* The queue text intentionally evolves as wait time/position are updated.
+ * Verify both meaningful fields, not an obsolete full UI sentence. */
+static int has_line_parts(const char *prefix, const char *value) {
+    for (int i = 0; i < g_nlines; i++)
+        if (!strncmp(g_lines[i], prefix, strlen(prefix)) && strstr(g_lines[i], value)) return 1;
+    return 0;
+}
+
 static int line_index(const char *l) {
     for (int i = 0; i < g_nlines; i++) if (!strcmp(g_lines[i], l)) return i;
     return -1;
@@ -567,8 +575,10 @@ static void test_queue(void) {
     xsm_init(&m, &cfg, NULL);
     xsm_phase_t p = run(&m, &s, 120000);
     CHECK(p == XSM_P_DONE, "fase final %s", xsm_phase_name(p));
-    CHECK(has_line("STATE\tQUEUE\tNa fila: ~10 min"), "fila com ETA do /v1/waittime");
-    CHECK(has_line("STATE\tQUEUE\tNa fila: posicao 3, <1 min"), "fila com posicao do /state");
+    CHECK(has_line_parts("STATE\tQUEUE\t", "estimativa ~10 min"),
+          "fila mostra ETA de 10 min obtido de /v1/waittime");
+    CHECK(has_line_parts("STATE\tQUEUE\t", "posição 3"),
+          "fila mostra posicao 3 obtida de /state");
     CHECK(s.n_wait == 1, "waittime 1x em 4s (a cada 30s): %d", s.n_wait);
     const mock_req_t *q = find_req("GET", "/v1/waittime/", 0);
     CHECK(q && !strcmp(q->path, "/v1/waittime/" TITLE), "path do waittime");

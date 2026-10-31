@@ -55,7 +55,7 @@ int main() {
           {"highContrast", 0},
           {"locale", "en-US"},
           {"useIceConnection", false},
-          {"timezoneOffsetMinutes", 120},
+          {"timezoneOffsetMinutes", 180}, /* Brazil pt-BR default: JS getTimezoneOffset()=180. */
           {"sdkType", "web"},
           {"osName", os}}},
         {"serverId", ""},
