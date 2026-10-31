@@ -1,0 +1,62 @@
+name: Orbita - chave de teste local
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gerar-e-validar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o repositorio
+        uses: actions/checkout@v4
+
+      - name: Gerar chave e validar somente no servidor simulado
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import importlib.util
+          import os
+          import secrets
+          import threading
+          import urllib.request
+          from http.server import HTTPServer
+          from pathlib import Path
+
+          alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+          raw = "".join(secrets.choice(alphabet) for _ in range(10))
+          key = raw[:5] + "-" + raw[5:]
+
+          path = Path("app/h264play/hosttest/beta/fake_server.py")
+          spec = importlib.util.spec_from_file_location("orbita_fake_beta", path)
+          fake = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(fake)
+          fake.KEYS[raw] = "ok"
+
+          server = HTTPServer(("127.0.0.1", 0), fake.H)
+          thread = threading.Thread(target=server.serve_forever, daemon=True)
+          thread.start()
+          try:
+              url = f"http://127.0.0.1:{server.server_port}/v1/beta/check"
+              request = urllib.request.Request(url, headers={
+                  "X-Api-Key": key,
+                  "X-Console": "0123456789abcdef0123456789abcdef",
+              })
+              with urllib.request.urlopen(request, timeout=10) as response:
+                  if response.status != 204:
+                      raise RuntimeError(f"Teste falhou: HTTP {response.status}")
+          finally:
+              server.shutdown()
+              server.server_close()
+
+          print("Chave de teste local:", key)
+          print("Validacao no servidor SIMULADO: HTTP 204")
+          print("ATENCAO: esta chave NAO ativa a beta oficial do Orbita.")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Teste local do Orbita\n\n")
+              summary.write(f"Chave: `{key}`\n\n")
+              summary.write("Validada somente no simulador local (HTTP 204).\n\n")
+              summary.write("**Nao funciona no servidor oficial x360.pistatrack.com.**\n")
+          PY
