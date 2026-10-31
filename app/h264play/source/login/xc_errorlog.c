@@ -17,6 +17,7 @@
 #define XE_FILE_LIMIT (256u * 1024u)
 #define XE_BATCH 12
 static char g_lines[XE_SLOTS][XE_WIDTH];
+static unsigned g_order[XE_SLOTS];
 static unsigned g_head, g_count, g_seq;
 static unsigned g_lost, g_lost_written;
 static volatile int g_lock;
@@ -84,6 +85,7 @@ void xc_error_capture(const char *line) {
         contains_ci(line, "[errlog]")) return;
     if (!XCLOUD360_ERRORLOG_ALL && !is_error(line)) return;
     char entry[XE_WIDTH];
+    memset(entry, 0, sizeof(entry));
     uint64_t ms = xcn_now_ms();
     const char *msg = contains_sensitive(line) ? "[detalhe oculto: credencial]" : line;
     snprintf(entry, sizeof(entry), "ms=%llu [%s] %.139s\n",
@@ -97,7 +99,7 @@ void xc_error_capture(const char *line) {
     unsigned tail = (g_head + g_count) % XE_SLOTS;
     memcpy(g_lines[tail], entry, sizeof(entry));
     /* Number at the beginning identifies each entry, even after overwrite. */
-    g_seq++;
+    g_order[tail] = ++g_seq;
     g_count++;
     unlock();
 }
@@ -131,21 +133,16 @@ int xc_error_flush_step(void) {
                          "[errlog] RAM overflow/lock contention: total dropped=%u\n", dropped);
         if (w > 0 && (size_t)w < sizeof(batch) - n) n += (size_t)w;
     }
-    unsigned seq_snapshot = g_seq;
+    unsigned last_seq = copied ? g_order[(first + copied - 1) % XE_SLOTS] : 0;
     unlock();
     if (!n) return 0;
     if (xc_store_append("ERRORS.TXT", "ERR_OLD.TXT", batch, n, XE_FILE_LIMIT) != 0) return 0;
     if (!lock_try()) return 1;
-    /* Do not remove entries added/overwritten during FatFs activity. */
-    unsigned added = g_seq - seq_snapshot;
-    unsigned removed = 0;
-    if (g_count >= copied + added) {
-        removed = copied;
-    } else if (g_count > added) {
-        removed = g_count - added;
+    /* New arrivals stay queued; overwritten records must not be dequeued twice. */
+    if (copied) while (g_count && (int32_t)(g_order[g_head] - last_seq) <= 0) {
+        g_head = (g_head + 1) % XE_SLOTS;
+        g_count--;
     }
-    g_head = (g_head + removed) % XE_SLOTS;
-    g_count -= removed;
     if (g_lost_written < dropped) g_lost_written = dropped;
     unlock();
     return 1;

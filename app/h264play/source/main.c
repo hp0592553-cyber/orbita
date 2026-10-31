@@ -3999,6 +3999,7 @@ static int worker_extra_step(void) {
     xcv_save_pending();   /* v0.21.21: XC360/VIDEO.TXT */
     cfg_save_pending();   /* v0.21.33: XC360/PAD.TXT e VOLUME.TXT */
     xw_sys_main_poll();
+    if (xc_error_flush_step()) return 1; /* XC360/ERRORS.TXT; only hw3/menu */
     if (xlu_speed_step()) return 1;   /* v0.21.43 */
     return xlu_step();
 }

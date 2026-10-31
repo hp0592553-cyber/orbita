@@ -116,6 +116,7 @@ static void xc_log_(const char *fmt, va_list ap0) {
         printf("%s\n", buf);
     }
 ram:
+    xc_error_capture(buf);  /* RAM only; no USB, UART or network in the capture path */
     np_log_line(buf);
 }
 

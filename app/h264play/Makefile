@@ -71,6 +71,8 @@ BETA ?= 1
 # Diagnostic builds can defer this check until after catalog login, so an
 # unavailable update endpoint cannot mask authentication/network errors.
 BOOT_UPDATE_FIRST ?= 1
+# 0 = record errors/warnings; 1 = capture all xc_log messages (diagnostic only).
+ERRORLOG_ALL ?= 0
 # Stock Free60 usb_open_pipe fallback, for experimental builds without custom USB patches.
 USB_INTERVAL_PIPE ?= 1
 # 1 = stock FFmpeg without Orbita-specific decoder instrumentation (counters disabled).
@@ -222,7 +224,8 @@ CFLAGS   := -g -O2 -Wall $(MACHDEP) $(INCLUDE) -I$(FFMPEG_DIR) \
             -DXCLOUD360_DECODE_THREADS=$(DECODE_THREADS) $(MT_CFLAGS) \
             $(GPU_CFLAGS) $(LOGIN_CFLAGS) $(AUDIO_CFLAGS) -DXCLOUD360_BETA=$(BETA) \
             -DXCLOUD360_USB_INTERVAL_PIPE=$(USB_INTERVAL_PIPE) -DXCLOUD360_FFMPEG_NO_PROF=$(FFMPEG_NO_PROF) \
-            -DXCLOUD360_BOOT_UPDATE_FIRST=$(BOOT_UPDATE_FIRST)
+            -DXCLOUD360_BOOT_UPDATE_FIRST=$(BOOT_UPDATE_FIRST) \\
+            -DXCLOUD360_ERRORLOG_ALL=$(ERRORLOG_ALL)
 CXXFLAGS := $(CFLAGS)
 LDFLAGS  := -g $(MACHDEP) -Wl,--gc-sections -Wl,-Map,$(notdir $@).map \
             -L$(FFMPEG_DIR)/libavcodec -L$(FFMPEG_DIR)/libavutil $(GPU_LDFLAGS)

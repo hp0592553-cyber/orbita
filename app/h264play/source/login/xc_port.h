@@ -65,6 +65,9 @@ int      xc_netlog_ready(void);
 int      xc_netlog_write(const char *text, size_t n);
 int      xc_store_writable(void);   /* v0.21.37 */
 void     xc_netlog_stats(unsigned *writes, unsigned *fails, unsigned *worst_us);
+/* Always-on error journal. Capture on any thread, write only on hw3/menu. */
+void     xc_error_capture(const char *line);
+int      xc_error_flush_step(void);
 void     xc_log_uart_drain(void);   /* v0.21.9: o main manda pra UART o que a hw1 logou */
 void     xc_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
