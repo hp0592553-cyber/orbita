@@ -95,11 +95,43 @@ build_target() {
   local MBED_FLAGS="$ARCH -I$HERE/mbedtls -I$MBEDTLS_SRC/include -I$MBEDTLS_SRC/library
                     -DMBEDTLS_CONFIG_FILE=\"xc360_mbedtls_webrtc_config.h\""
   : > "$OUT/obj/mbedtls.list"
+  : > "$OUT/obj/mbedtls-safe.list"
   for f in "$MBEDTLS_SRC"/library/*.c; do
-    echo "$f $OUT/obj/mbedtls/$(basename "${f%.c}").o" >> "$OUT/obj/mbedtls.list"
+    local entry="$f $OUT/obj/mbedtls/$(basename "${f%.c}").o"
+    # The on-console trace reached mbedtls_mpi_gcd -> mbedtls_mpi_sub_abs
+    # with a null B pointer during TLS ECDH. Do not optimize this arithmetic
+    # path as aggressively on the experimental GCC 16 Xenon compiler.
+    if [[ $T == xenon ]] && [[ $(basename "$f") == bignum.c ||
+                               $(basename "$f") == bignum_core.c ||
+                               $(basename "$f") == ecp.c ||
+                               $(basename "$f") == ecp_curves.c ||
+                               $(basename "$f") == ecdh.c ]]; then
+      echo "$entry" >> "$OUT/obj/mbedtls-safe.list"
+    else
+      echo "$entry" >> "$OUT/obj/mbedtls.list"
+    fi
   done
   echo "=== [$T] mbedTLS 3.4.0 (DTLS-SRTP superset config)"
   compile_list "$OUT/obj/mbedtls.list" "$CC" $MBED_FLAGS
+  if [[ -s "$OUT/obj/mbedtls-safe.list" ]]; then
+    echo "=== [$T] safer MPI/ECP compilation (-O1, no strict aliasing)"
+    compile_list "$OUT/obj/mbedtls-safe.list" "$CC" $MBED_FLAGS -O1 -fno-strict-aliasing -fno-tree-vectorize
+  fi
+  if [[ $T == xenon ]]; then
+    # Compile-time regression check: the library AND its public headers
+    # must describe 32-bit limbs, pointers and size_t for Xbox 360.
+    cat > "$OUT/obj/mbedtls/mpi_abi_check.c" <<'XC_MPI_ABI'
+#include <mbedtls/bignum.h>
+typedef char xenon_pointer_is_32_bit[(sizeof(void *) == 4) ? 1 : -1];
+typedef char xenon_size_t_is_32_bit[(sizeof(size_t) == 4) ? 1 : -1];
+typedef char xenon_mpi_limb_is_32_bit[(sizeof(mbedtls_mpi_uint) == 4) ? 1 : -1];
+#if !defined(MBEDTLS_HAVE_INT32) || defined(MBEDTLS_HAVE_INT64)
+#error "Xenon mbedTLS bignum ABI must use 32-bit limbs"
+#endif
+XC_MPI_ABI
+    "$CC" $MBED_FLAGS -c "$OUT/obj/mbedtls/mpi_abi_check.c" -o "$OUT/obj/mbedtls/mpi_abi_check.o"
+    echo "[mbedtls] checked Xenon ABI: 32-bit limbs/pointers/size_t"
+  fi
   "$AR" rcs "$OUT/lib/libmbedtls-xcwebrtc.a" "$OUT"/obj/mbedtls/*.o
 
   # ---- libsrtp 2.4.2, built-in crypto (no OpenSSL/mbedTLS backend) --------

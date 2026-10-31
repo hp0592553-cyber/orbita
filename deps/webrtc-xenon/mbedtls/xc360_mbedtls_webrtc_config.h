@@ -34,6 +34,17 @@
 #define MBEDTLS_ENTROPY_HARDWARE_ALT
 #define MBEDTLS_DEPRECATED_REMOVED
 
+/* The Xenon toolchain uses the 32-bit ELF ABI (-m32), but also passes
+ * -mpowerpc64 for the CPU instruction set. On some GCC configurations
+ * __powerpc64__ makes mbedTLS auto-select 64-bit MPI limbs plus 128-bit
+ * intermediates, even though pointers and size_t are 32-bit. Pin the
+ * documented 32-bit limb implementation for ALL mbedTLS/DTLS consumers,
+ * including the login code (they share this one configuration).
+ * Do not turn off certificate validation or switch to weaker TLS. */
+#if defined(XENON) || defined(__XENON__)
+#define MBEDTLS_HAVE_INT32
+#endif
+
 /* bignum / chave pública */
 #define MBEDTLS_BIGNUM_C
 #define MBEDTLS_RSA_C
