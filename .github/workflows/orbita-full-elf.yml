@@ -67,6 +67,11 @@ jobs:
               test -s app/h264play/h264play.elf32
             ' > reports/build.log 2>&1
           rc=$?
+          cp .orbita-ci/ffmpeg/config.log reports/ffmpeg-config.log 2>/dev/null || true
+          if [ "$rc" -ne 0 ] && [ -s reports/ffmpeg-config.log ]; then
+            echo '=== FFmpeg configure diagnostics ==='
+            tail -n 60 reports/ffmpeg-config.log
+          fi
           echo "$rc" > reports/exitcode.txt
           tail -n 90 reports/build.log
           if [ "$rc" -eq 0 ] && [ -s app/h264play/h264play.elf32 ]; then
