@@ -835,10 +835,39 @@ static void wdt_stop(void) {
     for (int i = 0; i < 600 && xenon_is_thread_task_running(WDT_HW); i++) xc_polite_udelay(1000);
 }
 
-/* v0.21.10: o Wi-Fi dentro da bomba do xcw_idle (mesma thread, hw1) */
+/* In xcw_idle() the hw1 network thread calls stream_net_pump(), not the
+ * usual idle hook (net_hook). Before this fix it pumped lwIP + Wi-Fi, but
+ * NEVER polled the USB gamepad. Long ICE/WebRTC waits could therefore leave
+ * both controller updates and watchdog beats frozen even while IP was alive.
+ *
+ * Only poll at ~1 kHz (the same cadence as net_hook); obey the USB-storage
+ * hold so the login/catalog thread can safely access the thumb drive.
+ * This is a real pump: do not simply fake the heartbeat. */
 static void pump_wifi(void) {
-    if (g_usb_hold_req) xw_sys_step_held();
-    else xw_sys_step();
+    static uint64_t last_us = 0;
+    uint64_t t = now_us();
+    if (last_us && t - last_us < 1000) return;
+    last_us = t;
+    xwd_beat("rede: WebRTC espera (rede + USB)");
+    if (g_usb_hold_req) {
+        if (!g_usb_hold_ack) {
+            g_usb_hold_ack = 1;
+            __asm__ __volatile__("sync" ::: "memory");
+        }
+        if (g_input_on_net) xw_usb_poll_no_storage();
+        xw_sys_step_held();
+    } else {
+        if (g_usb_hold_ack) {
+            g_usb_hold_ack = 0;
+            __asm__ __volatile__("sync" ::: "memory");
+        }
+        if (g_input_on_net) usb_do_poll();
+        xw_sys_step();
+    }
+    if (g_input_on_net) {
+        g_usb_poll_us = t;
+        if (g_pad_forward) poll_and_send_gamepad();
+    }
 }
 
 static int net_hook(void) {

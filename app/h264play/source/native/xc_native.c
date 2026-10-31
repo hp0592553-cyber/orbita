@@ -1,5 +1,6 @@
 /* XCloud360 stage 5 — see xc_native.h. Our code (no third-party source). */
 #include "../xc_perf.h"   /* v0.21.43 */
+#include "../xc_wdog.h"   /* hw1 phase breadcrumb for HANG.TXT */
 #include "xc_native.h"
 
 #include <stdarg.h>
@@ -627,7 +628,11 @@ static void session_drive(void) {
 
 void xn_net_step(void) {
     if (!g_inited) return;
+    /* If hw1 stalls, HANG.TXT now distinguishes session HTTPS, SDP/ICE
+     * PeerConnection work and gamepad/audio/USB polling. */
+    xwd_crumb("rede: sessao/keepalive");
     session_drive();
+    xwd_crumb("rede: sessao terminou");
     int want = g_want;
     fence();
     if (!want) {
@@ -670,7 +675,9 @@ void xn_net_step(void) {
         if (g_kf_force) { g_kf_force = 0; g_kf_req = 0; xcw_request_keyframe(x, 1); }
         else if (g_kf_req) { g_kf_req = 0; xcw_request_keyframe(x, 0); }
     }
+    xwd_crumb("rede: PeerConnection SDP/ICE/DTLS");
     xcws_step(&g_g);
+    xwd_crumb("rede: PeerConnection retornou");
     x = xcws_pc(&g_g);
     apply_pause(x);   /* PC novo (re-sinalização) no meio da pausa */
     g_rtc_us += xcw_now_us() - t0;
