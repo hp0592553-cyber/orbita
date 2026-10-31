@@ -18,6 +18,15 @@ jobs:
       - name: Obter codigo-fonte
         uses: actions/checkout@v4
 
+      - name: Gerar recursos da interface no runner Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/orbita-python"
+          "$RUNNER_TEMP/orbita-python/bin/python" -m pip install --disable-pip-version-check pillow==11.3.0
+          "$RUNNER_TEMP/orbita-python/bin/python" app/h264play/tools/gen_xui_assets.py app/h264play/source/ui/xui_assets.h
+          test -s app/h264play/source/ui/xui_assets.h
+
       - name: Compilar cliente completo para Xenon (modo local experimental)
         id: compile
         shell: bash
