@@ -135,6 +135,34 @@ jobs:
                 OPUS_DIR=/app/.orbita-ci/opus-xenon \
                 WEBRTC_DIR=/app/.orbita-ci/webrtc-xenon/xenon
               test -s app/h264play/h264play.elf32
+              # Diagnostic only: translate the addresses from the Xbox
+              # segmentation-fault photo with the matching unstripped ELF.
+              # No change to Xbox execution or runtime behaviour.
+              echo "=== Segfault address symbolication ==="
+              {
+                echo "Captured Xbox exception (verify same ELF version):"
+                echo "SRR0=0x8050fdc0 DAR=0x00000004 LR=0x805129cc"
+                echo "Stack: 0x8050fdc0 0x805129cc 0x804ce12c 0x804efb0c 0x80515970 0x80507a20 0x80504660 0x80431dcc 0x804329d8"
+                echo
+                if command -v xenon-addr2line >/dev/null 2>&1; then
+                  for addr in 0x8050fdc0 0x805129cc 0x804ce12c 0x804efb0c 0x80515970 0x80507a20 0x80504660 0x80431dcc 0x804329d8; do
+                    echo "ADDRESS $addr"
+                    xenon-addr2line -f -C -i -e /app/app/h264play/h264play.elf "$addr" || true
+                  done
+                else
+                  echo "xenon-addr2line unavailable"
+                fi
+                if command -v xenon-objdump >/dev/null 2>&1; then
+                  echo
+                  echo "DISASSEMBLY around SRR0 (0x8050fdc0):"
+                  xenon-objdump -d -C -S --start-address=0x8050fd80 --stop-address=0x8050fe30 /app/app/h264play/h264play.elf || true
+                  echo
+                  echo "DISASSEMBLY around LR (0x805129cc):"
+                  xenon-objdump -d -C -S --start-address=0x80512980 --stop-address=0x80512a20 /app/app/h264play/h264play.elf || true
+                else
+                  echo "xenon-objdump unavailable"
+                fi
+              } > /app/reports/crash-symbolication.txt 2>&1
             ' > reports/build.log 2>&1
           rc=$?
           cp .orbita-ci/ffmpeg/config.log reports/ffmpeg-config.log 2>/dev/null || true
