@@ -1,0 +1,76 @@
+name: Orbita - preparar FFmpeg Xenon
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/orbita-ffmpeg.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ffmpeg:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Baixar FFmpeg 0.10.2 (fonte oficial)
+        run: |
+          set -euo pipefail
+          mkdir -p build-deps/ffmpeg
+          curl -fsSL --retry 3 https://ffmpeg.org/releases/ffmpeg-0.10.2.tar.bz2 -o /tmp/ffmpeg.tar.bz2
+          tar -xjf /tmp/ffmpeg.tar.bz2 --strip-components=1 -C build-deps/ffmpeg
+
+      - name: Cross-compilar bibliotecas H.264 para Xenon
+        shell: bash
+        run: |
+          set +e
+          docker run --rm -v "$PWD:/app" -w /app/build-deps/ffmpeg \
+            -e DEVKITXENON=/usr/local/xenon \
+            free60/libxenon:latest /bin/bash -c '
+              export PATH=/usr/local/xenon/bin:/usr/local/xenon/usr/bin:$PATH
+              ./configure \
+                --target-os=none --arch=powerpc --cpu=cell \
+                --enable-cross-compile --cc=xenon-gcc --cross-prefix=xenon- --nm=xenon-nm \
+                --disable-shared --enable-static \
+                --disable-everything --disable-programs --disable-doc \
+                --disable-avdevice --disable-avfilter --disable-postproc \
+                --disable-encoders --disable-muxers --disable-network \
+                --disable-pthreads --disable-altivec --disable-yasm --disable-asm \
+                --enable-decoder=h264 --enable-parser=h264 \
+                --enable-demuxer=h264 --enable-protocol=file \
+                --extra-cflags="-O2 -m32 -mpowerpc64 -mhard-float -fno-pic -DXENON -D__XENON__"
+              make -j2 libavcodec/libavcodec.a libavutil/libavutil.a
+            ' > build-deps/ffmpeg-build.log 2>&1
+          rc=$?
+          tail -n 90 build-deps/ffmpeg-build.log
+          echo "return_code=$rc" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Resultado e arquivos
+        shell: bash
+        run: |
+          if [[ -s build-deps/ffmpeg/libavcodec/libavcodec.a && -s build-deps/ffmpeg/libavutil/libavutil.a ]]; then
+            echo "FFmpeg Xenon compilado" >> "$GITHUB_STEP_SUMMARY"
+            mkdir -p build-deps/ffmpeg-output/libavcodec build-deps/ffmpeg-output/libavutil
+            cp build-deps/ffmpeg/libavcodec/libavcodec.a build-deps/ffmpeg-output/libavcodec/
+            cp build-deps/ffmpeg/libavutil/libavutil.a build-deps/ffmpeg-output/libavutil/
+            cp -r build-deps/ffmpeg/libavcodec/*.h build-deps/ffmpeg-output/libavcodec/
+            cp -r build-deps/ffmpeg/libavutil/*.h build-deps/ffmpeg-output/libavutil/
+          else
+            echo "FFmpeg Xenon ainda nao compilou. Confira ffmpeg-build.log" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Publicar logs mesmo se falhar
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbita-ffmpeg-build-report
+          path: |
+            build-deps/ffmpeg-build.log
+            build-deps/ffmpeg-output/
+          if-no-files-found: warn
