@@ -172,6 +172,10 @@ jobs:
           fi
           echo "$rc" > reports/exitcode.txt
           tail -n 90 reports/build.log
+          if [ -s reports/crash-symbolication.txt ]; then
+            echo '=== Xbox crash source mapping (photo addresses) ==='
+            cat reports/crash-symbolication.txt
+          fi
           if [ "$rc" -eq 0 ] && [ -s app/h264play/h264play.elf32 ]; then
             cp app/h264play/h264play.elf32 reports/orbita-beta0.elf32
             # Keep a matching unstripped image and link map to resolve
