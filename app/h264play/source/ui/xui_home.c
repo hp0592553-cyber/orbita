@@ -374,6 +374,12 @@ static void draw_card(xui_view_t *v, xui_canvas_t *c, const xui_home_data_t *d, 
         xui_text_wrap(c, XUI_F_BODY, x + 12, top + 12 + xui_face(XUI_F_BODY)->ascent, w - 24, lh, 4, 1,
                       XUI_C_TEXT, it->name);
     }
+    if (it->flags & XUI_IT_NOACCESS) {
+        /* Browse sem assinatura: a arte é visível, o streaming não é liberado. */
+        xui_fill_a(c, x, y, w, h, XUI_C_BG, 72);
+        xui_round_rect(c, x + 6, y + 6, w - 12, 24, 3, XUI_C_PANEL, 220);
+        xui_text(c, XUI_F_LABEL, x + 10, y + 23, XUI_C_DIM, L("SEM ACESSO"), 0, w - 20);
+    }
     /* selos de baixo: ASSINATURA à esquerda (só jogo da assinatura; F2P e
      * "compre para jogar" ficam sem etiqueta), controle à direita */
     if (it->flags & XUI_IT_GAMEPASS) draw_sub_label(c, x + 4, y + h - 28);
@@ -444,6 +450,9 @@ static void render_home(xui_view_t *v, xui_canvas_t *c, const xui_home_data_t *d
             xui_circle(c, x + 6, HERO_META_Y - 5, 6, XUI_C_ACCENT, 255);
             xui_text(c, XUI_F_LABEL, x + 20, HERO_META_Y, XUI_C_TEXT,
                      L("Sessão em andamento  ·  A: voltar ao jogo"), 0, 0);
+        } else if (v->focus_flags & XUI_IT_NOACCESS) {
+            xui_text(c, XUI_F_LABEL, x, HERO_META_Y, XUI_C_YELLOW,
+                     L("No catálogo  ·  A: ver requisitos de acesso"), 0, 0);
         } else {
             xui_text(c, XUI_F_LABEL, x, HERO_META_Y, XUI_C_DIM, L("Jogue na nuvem  ·  A: jogar"), 0, 0);
         }
