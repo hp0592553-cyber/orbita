@@ -62,7 +62,7 @@ jobs:
                 --extra-ldflags="-m32 -nostdlib -Wl,-e,main"
               # FFmpeg 0.10.2 nao reconhece as funcoes matematicas de newlib no cross-link.
               # Se HAVE_* ficar 0, o header legado redeclara essas funcoes e GCC 16 falha.
-              for func in LRINT LRINTF ROUND ROUNDF TRUNC TRUNCF; do
+              for func in LRINT LRINTF ROUND ROUNDF TRUNC TRUNCF MKSTEMP; do
                 sed -i "s/#define HAVE_$func 0/#define HAVE_$func 1/" config.h
               done
               make -j2 libavcodec/libavcodec.a libavutil/libavutil.a
