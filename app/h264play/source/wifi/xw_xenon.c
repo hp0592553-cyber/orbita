@@ -327,8 +327,15 @@ static int attach(usbdev_t *d) {
     int r = usb_set_configuration(d, cfg->bConfigurationValue);
     xc_log("[wifi] SET_CONFIGURATION %d -> %d", cfg->bConfigurationValue, r);
     g_dev = d;
+/* Some upstream Free60 builds expose only usb_open_pipe(), without the
+ * optional interval-aware helper used by the custom libxenon patches.
+ * Build-time fallback is intended for Ethernet-focused experimental builds. */
+#if defined(XCLOUD360_USB_INTERVAL_PIPE) && XCLOUD360_USB_INTERVAL_PIPE == 0
+#define OPEN(e) usb_open_pipe(d, (e))
+#else
 #define OPEN(e) (((e)->bmAttributes & USB_ENDPOINT_TYPE_MASK) == USB_ENDPOINT_TYPE_INTERRUPT \
                  ? usb_open_pipe_interval(d, (e), (e)->bInterval ? (e)->bInterval : 1) : usb_open_pipe(d, (e)))
+#endif
     g_ep_cout = OPEN(cout);
     g_ep_cin = OPEN(cin);
     g_ep_dout = OPEN(dout);
