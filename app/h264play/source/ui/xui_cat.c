@@ -45,14 +45,29 @@ int xui_cat_sync(xui_cat_t *c, menu_model_t *m, xui_home_data_t *d) {
     memset(c->hitem, 0, sizeof(c->hitem));
     for (int r = 0; r < XCC_NROWS; r++)
         for (int i = 0; i < c->rows.row[r].n; i++) hash_put(c, &c->rows.row[r].items[i]);
-    /* fileiras do modelo: na ordem do catálogo, só o que o modelo conhece */
+    /* Evita busca linear O(n*n) na primeira tela com ~3000 jogos. */
+    static short game_hash[XUI_CAT_HASH];
+    memset(game_hash, 0, sizeof(game_hash));
+    for (int i = 0; i < m->ngames; i++) {
+        unsigned h = hstr(m->games[i].id) & (XUI_CAT_HASH - 1);
+        while (game_hash[h]) h = (h + 1) & (XUI_CAT_HASH - 1);
+        game_hash[h] = (short)(i + 1);
+    }
     mm_rows_clear(m);
     for (int r = 0; r < XCC_NROWS; r++) {
         const xcc_row_t *cr = &c->rows.row[r];
         if (cr->n <= 0) continue;
         int k = mm_rows_add(m, cr->title);
         if (k < 0) break;
-        for (int i = 0; i < cr->n; i++) mm_rows_push_id(m, k, cr->items[i].id);
+        for (int i = 0; i < cr->n; i++) {
+            const char *id = cr->items[i].id;
+            unsigned h = hstr(id) & (XUI_CAT_HASH - 1);
+            while (game_hash[h]) {
+                int idx = game_hash[h] - 1;
+                if (!strcmp(m->games[idx].id, id)) { mm_rows_push(m, k, idx); break; }
+                h = (h + 1) & (XUI_CAT_HASH - 1);
+            }
+        }
     }
     mm_rows_done(m);
     if (m->nrows == 0) mm_rows_default(m);   /* catálogo sem fileiras ainda: a lista do modelo */
@@ -91,7 +106,10 @@ void xui_cat_bind(xui_cat_t *c, xui_home_data_t *d) {
 
 unsigned xui_cat_flags(void *u, const char *id) {
     const xcc_item_t *it = hash_get((const xui_cat_t *)u, id);
-    return it && (it->flags & XA_F_SUB) ? XUI_IT_GAMEPASS : 0;
+    if (!it) return 0;
+    unsigned f = (it->flags & XA_F_SUB) ? XUI_IT_GAMEPASS : 0;
+    if (!(it->flags & (XA_F_OWNED | XA_F_INSUB | XA_F_ADPLAY))) f |= XUI_IT_NOACCESS;
+    return f;
 }
 
 void xui_cat_want(xui_cat_t *c, const xui_view_t *v, const xui_home_data_t *d) {
