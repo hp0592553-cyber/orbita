@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/orbita-offline-tests.yml'
+      - 'app/h264play/source/**'
+      - 'app/h264play/hosttest/**'
+      - 'deps/webrtc-xenon/mbedtls/**'
 
 permissions:
   contents: read
@@ -67,7 +70,7 @@ jobs:
           {
             echo '## Orbita - testes offline'
             echo
-            echo 'Este workflow executa testes de codigo no Linux contra servidor local simulado.'
+            echo 'Este workflow testa beta, login, catalogo, sessao de jogo e interface em Linux com simulacoes, sem autenticar no Xbox real.'
             echo
             echo '**Nao produz xenon.elf; nao gera chave beta oficial nem libera streaming.**'
             echo
