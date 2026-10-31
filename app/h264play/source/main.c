@@ -1982,7 +1982,7 @@ static unsigned xbox_title_flags(const char *id) {
  * main só com a hw 3 livre (FatFs não é reentrante). Formato: "XCCAT1" e uma
  * linha "id<TAB>nome<TAB>flags" por jogo. */
 #define CATLIST_FILE "CATLIST.TXT"
-#define CATLIST_CAP  (256 * 1024)
+#define CATLIST_CAP  (512 * 1024)
 static char  *volatile g_catsave = NULL;   /* texto (NUL no fim) esperando quem pode usar o pendrive */
 static char  *g_catboot = NULL;       /* lido no boot, aplicado depois do mm_init */
 static int    g_catboot_len = 0;
@@ -3355,7 +3355,11 @@ static int menu_loop(int net_ok, const char *msg) {
                             pend_upd = 1;
                     }
                 } else if (act == MM_A_PLAY && g) {
-                    if (xcu_running() || pend_upd) {
+                    if (!(xbox_title_flags(g->id) & (XA_F_OWNED | XA_F_INSUB | XA_F_ADPLAY))) {
+                        snprintf(notice, sizeof(notice),
+                                 "Jogo no catálogo, mas sem acesso nesta conta. Verifique Game Pass ou compra elegível.");
+                        xc_log("[menu] PLAY bloqueado: sem acesso ao titulo %s", g->id);
+                    } else if (xcu_running() || pend_upd) {
                         snprintf(notice, sizeof(notice), "Aguarde: procurando atualização…");
                     } else if (lt_login_running()) {
                         /* a thread do login ocupa a hw 3 (sessão/decoder precisam dela).
@@ -3665,7 +3669,9 @@ static int menu_loop(int net_ok, const char *msg) {
             g_xd.update_label = NULL;
         }
         const mm_game_t *fg = mm_focus_game(&g_mm);
-        g_xd.hint = (sid && fg && !strcmp(fg->id, sid)) ? "A:Voltar ao jogo|Y:Atualizar" : "A:Jogar|Y:Atualizar";
+        g_xd.hint = (sid && fg && !strcmp(fg->id, sid)) ? "A:Voltar ao jogo|Y:Atualizar"
+                  : fg && !(xbox_title_flags(fg->id) & (XA_F_OWNED | XA_F_INSUB | XA_F_ADPLAY))
+                  ? "A:Ver acesso|Y:Atualizar" : "A:Jogar|Y:Atualizar";
         if (notice[0]) g_xd.notice = notice;
         else if (sid && fg && strcmp(fg->id, sid)) g_xd.notice = "Ao abrir outro jogo, a sessão atual é encerrada.";
         else if (g_cat_src == 1 && g_xbox_err[0]) g_xd.notice = g_xbox_err;
