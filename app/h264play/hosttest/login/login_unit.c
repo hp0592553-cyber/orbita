@@ -198,6 +198,12 @@ static void test_json(void) {
           !strcmp(t[3].id, "OWNEDGAME"));
     free(t);
     free(ads);
+    CHECK(xa_parse_titles(TITLES, &t, &n) == 0 && n == 4);
+    CHECK(xa_browse_prepare(t, n) == 4);
+    CHECK(xa_playable(&t[0]) && xa_playable(&t[1]));
+    CHECK(!xa_playable(&t[2]) && !xa_playable(&t[3]));
+    CHECK(find(t, n, "NOTMINE") != NULL);
+    free(t);
     CHECK(xa_parse_titles("{nao json", &t, &n) == -1);
     CHECK(xa_parse_titles("{\"results\":[]}", &t, &n) == 0 && n == 0);
     free(t);
