@@ -1,0 +1,64 @@
+name: Orbita - compilar ELF de diagnostico Xenon
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/orbita-xenon-diagnostico.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Gerar hwtest.elf32 (teste de rede e controle)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
+
+      - name: Compilar para Xbox 360 com Free60 libxenon
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull free60/libxenon:latest
+          docker run --rm \
+            -v "$PWD:/app" -w /app \
+            -e DEVKITXENON=/usr/local/xenon \
+            free60/libxenon:latest \
+            /bin/bash -ec '
+              export PATH="/usr/local/xenon/bin:/usr/local/xenon/usr/bin:$PATH"
+              command -v xenon-gcc
+              xenon-gcc --version | head -n 1
+              make -C app/hwtest clean
+              make -C app/hwtest -j2
+              test -s app/hwtest/hwtest.elf32
+            '
+
+      - name: Identificar arquivo e calcular SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          file app/hwtest/hwtest.elf32
+          sha256sum app/hwtest/hwtest.elf32 > app/hwtest/hwtest-build.sha256
+          {
+            echo '## Diagnostico Xenon'
+            echo
+            echo 'Compilacao do app/hwtest, que testa CPU, rede Ethernet, DHCP e controle.'
+            echo
+            echo 'Este NAO e o cliente Orbita e nao concede acesso a beta ou streaming.'
+            echo
+            echo 'Artefato: hwtest.elf32 e checksum.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Disponibilizar ELF para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: xbox360-hwtest-elf
+          path: |
+            app/hwtest/hwtest.elf32
+            app/hwtest/hwtest-build.sha256
+          if-no-files-found: error
+          retention-days: 7
