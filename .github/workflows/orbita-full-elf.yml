@@ -38,6 +38,9 @@ jobs:
           status=$(curl -sS --connect-timeout 10 --max-time 20 --output /dev/null --write-out '%{http_code}' https://x360.pistatrack.com/)
           echo "HTTPS publico x360.pistatrack.com: HTTP $status" | tee reports/servidor-oficial.txt
           test "$status" != '000'
+          # Uma unica consulta sem credenciais: checa se a API beta responde, nao tenta ativar.
+          api_status=$(curl -sS --connect-timeout 10 --max-time 20 --output /dev/null --write-out '%{http_code}' https://x360.pistatrack.com/v1/beta/check || true)
+          echo "API beta sem chave: HTTP $api_status" | tee -a reports/servidor-oficial.txt
 
       - name: Construir bibliotecas Xenon e Orbita BETA=0
         shell: bash
@@ -58,13 +61,15 @@ jobs:
                 --disable-pthreads --disable-altivec --disable-yasm --disable-asm \
                 --disable-network --enable-decoder=h264 --enable-parser=h264 \
                 --enable-demuxer=h264 --enable-protocol=file \
-                --extra-cflags="-O2 -m32 -mpowerpc64 -mhard-float -fno-pic -DXENON -D__XENON__ -Wno-error=incompatible-pointer-types" \
+                --extra-cflags="-O2 -m32 -mpowerpc64 -mhard-float -fno-pic -DXENON -D__XENON__ -D_GNU_SOURCE -D_DEFAULT_SOURCE -Wno-error=incompatible-pointer-types" \
                 --extra-ldflags="-m32 -nostdlib -Wl,-e,main"
               # FFmpeg 0.10.2 nao reconhece as funcoes matematicas de newlib no cross-link.
               # Se HAVE_* ficar 0, o header legado redeclara essas funcoes e GCC 16 falha.
               for func in LRINT LRINTF ROUND ROUNDF TRUNC TRUNCF MKSTEMP; do
                 sed -i "s/#define HAVE_$func 0/#define HAVE_$func 1/" config.h
               done
+              # newlib: disponibilizar declaracao POSIX de mkstemp ao arquivo legado.
+              sed -i "/#include <unistd.h>/a #include <stdlib.h>" libavutil/file.c
               make -j2 libavcodec/libavcodec.a libavutil/libavutil.a
               echo "=== Opus Xenon ==="
               cd /app
