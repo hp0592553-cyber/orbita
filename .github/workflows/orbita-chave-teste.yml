@@ -1,6 +1,10 @@
 name: Orbita - chave de teste local
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/orbita-chave-teste.yml'
   workflow_dispatch:
 
 permissions:
