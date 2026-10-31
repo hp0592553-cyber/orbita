@@ -43,7 +43,7 @@ enum { XCC_ROW_RECENT = 0, XCC_ROW_POPULAR, XCC_ROW_NEW, XCC_ROW_ALL, XCC_NROWS 
 enum { XCC_COVER = 0, XCC_HERO = 1 };
 
 #define XCC_ROW_MAX      40     /* recentes / populares / novos */
-#define XCC_ALL_MAX      1024   /* "Todos os jogos" */
+#define XCC_ALL_MAX      3072   /* "Todos os jogos" */
 #define XCC_COVER_W      176
 #define XCC_COVER_H      264
 /* v0.20.0: hero em 1280x720 (era 640x360 ampliado 2x no menu, macio): o
