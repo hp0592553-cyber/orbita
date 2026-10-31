@@ -691,7 +691,18 @@ static void do_image(const job_t *j) {
     xccp_lock();
     ent_t *e = ent_find(j->product);
     if (rc == 0 && !from_net) g_st.disk_hits++;
-    if (rc == 0 && j->decode && !px) g_st.decode_errors++;
+    if (rc == 0 && j->decode && !px) {
+        g_st.decode_errors++;
+        /* A cached JPEG may pass the magic/header checks yet be truncated
+         * internally. If decoding fails, discard its cached index bit and
+         * retry from HTTPS on the next attempt instead of reading the same
+         * broken file five times. This also covers a bad network response
+         * that had just been saved as a JPEG. */
+        if (e) {
+            e->disk &= (uint8_t)~bit;
+            g_idx_dirty++;
+        }
+    }
     int failed = rc != 0 || (j->decode && !px);
     if (e) {
         if (failed) {

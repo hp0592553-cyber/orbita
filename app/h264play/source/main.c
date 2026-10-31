@@ -2920,6 +2920,8 @@ static int menu_loop(int net_ok, const char *msg) {
     char notice[160];
     char title[120];
     snprintf(notice, sizeof(notice), "%s", msg ? msg : "");
+    unsigned catalog_login_seen = g_lt_runs_seen;
+    uint64_t play_pending_at = 0;
     uint64_t rep_up = 0, rep_dn = 0, rep_lf = 0, rep_rt = 0;
     menu_btn_t prev, b;
     /* Botões já apertados na entrada (Back+Start do jogo, A do teste) não
@@ -3038,6 +3040,13 @@ static int menu_loop(int net_ok, const char *msg) {
         }
         g_netwait = !g_netwait_done && net_ok && g_input_on_net;
         xbox_login_poll();
+        /* The Y:Atualizar banner is transient. Previously it stayed on
+         * the home screen even after the *new* Xbox catalog arrived. */
+        if (g_lt_runs_seen != catalog_login_seen) {
+            catalog_login_seen = g_lt_runs_seen;
+            if (g_lts.phase == LT_DONE && !strcmp(notice, "Atualizando o catálogo…"))
+                notice[0] = '\0';
+        }
         beta_poll(&pend_upd);   /* v0.20.3 */
         /* v0.20.3: login só depois da chave (BETA) e da checagem de atualização */
         /* v0.21.7: com a lista do pendrive na tela, as capas do cache aparecem
@@ -3213,7 +3222,19 @@ static int menu_loop(int net_ok, const char *msg) {
         }
         /* v0.19.3/v0.20.0: A num jogo -> entra assim que a hw 3 (worker) e a
          * sessão anterior liberarem. O mesmo jogo aberto = volta na hora. */
+        /* Never leave A:Jogar silently pending forever if a cover download
+         * is stuck while releasing hw3. Do not kill a running session. */
+        if (g_next_on && !waiting && play_pending_at &&
+            now - play_pending_at > 45000000ULL &&
+            (xcc_bg_running() || lt_running())) {
+            g_next_on = 0;
+            play_pending_at = 0;
+            snprintf(notice, sizeof(notice),
+                     "Não consegui liberar a rede/capas para iniciar o jogo. Aperte A para tentar novamente.");
+            xc_log("[menu] PLAY pendente cancelado: hw3 ocupada por mais de 45 s");
+        }
         if (g_next_on && !waiting && screen == SCR_LIST && !xcc_bg_running() && !lt_running()) {
+            play_pending_at = 0;
             const mm_game_t *g = &g_next_play;
             char sid[48];
             int ss = xn_session(sid, sizeof(sid), NULL, 0);
@@ -3319,7 +3340,12 @@ static int menu_loop(int net_ok, const char *msg) {
                         int ss = xn_session(sid, sizeof(sid), NULL, 0);
                         g_next_play = *g;
                         g_next_on = 1;
-                        if (xcc_bg_running()) xcc_bg_stop();   /* regra da hw 3 */
+                        play_pending_at = now;
+                        if (xcc_bg_running()) {
+                            xcc_bg_stop();   /* regra da hw 3 */
+                            snprintf(notice, sizeof(notice),
+                                     "Preparando o jogo: finalizando os downloads de capas...");
+                        }
                         if (ss == XN_SESS_PAUSED && strcmp(sid, g->id)) {
                             printf("[menu] %s aberto: DELETE antes de abrir %s\n", sid, g->id);
                             xn_stop();
@@ -3333,6 +3359,7 @@ static int menu_loop(int net_ok, const char *msg) {
             }
             if (PRESSED(b) && !mm_press_b(&g_mm) && g_next_on) {
                 g_next_on = 0;
+                play_pending_at = 0;
                 snprintf(notice, sizeof(notice), "Cancelado");
             }
         } else if (screen != SCR_BKEY && screen != SCR_CFG && screen != SCR_WIFI && screen != SCR_WKEY) {

@@ -111,6 +111,10 @@ int xcc_parse_images(const char *json, xcc_imgref_t **out, int *n) {
     cJSON *j = cJSON_Parse(json ? json : "");
     if (!j) return -1;
     const cJSON *prods = cJSON_GetObjectItemCaseSensitive(j, "Products");
+    /* An error document or an unexpected Microsoft response schema must
+     * not be considered an empty successful catalog. Otherwise do_dc_batch
+     * marks every game as permanently having no cover. */
+    if (!cJSON_IsArray(prods)) { cJSON_Delete(j); return -1; }
     int cap = cJSON_GetArraySize(prods);
     xcc_imgref_t *r = (xcc_imgref_t *)calloc((size_t)(cap > 0 ? cap : 1), sizeof(*r));
     if (!r) { cJSON_Delete(j); return -1; }

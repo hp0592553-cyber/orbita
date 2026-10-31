@@ -11,6 +11,9 @@ on:
       - 'app/h264play/source/wifi/xw_xenon.c'
       - 'app/h264play/source/dec/xc_decdiag.c'
       - 'app/h264play/source/dec/xc_prof_compat.h'
+      - 'app/h264play/source/**'
+      - 'app/h264play/hosttest/**'
+      - 'deps/webrtc-xenon/mbedtls/**'
 
 permissions:
   contents: read

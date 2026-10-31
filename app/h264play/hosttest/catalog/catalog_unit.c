@@ -185,6 +185,9 @@ static void test_parse(void) {
     CHECK(xcc_parse_sigl("<html>", &ids, &n, NULL, 0) == -1 && ids == NULL);
 
     xcc_imgref_t *r = NULL;
+    /* A 200 response containing an error object is not a valid catalog. */
+    CHECK(xcc_parse_images("{\\\"error\\\":\\\"upstream_unavailable\\\"}", &r, &n) == -1 && r == NULL && n == 0);
+    CHECK(xcc_parse_images("{\\\"Products\\\":null}", &r, &n) == -1 && r == NULL && n == 0);
     s = slurp("displaycatalog_raw3_BR.json", NULL);
     CHECK(xcc_parse_images(s, &r, &n) == 0 && n == 3);
     for (int i = 0; i < n; i++) {
