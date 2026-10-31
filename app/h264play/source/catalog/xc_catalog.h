@@ -124,6 +124,9 @@ int  xcc_bg_running(void);
  * volta, depois do xcc_worker_step: o upload do log beta (xlu_step /
  * xlu_finish). step: 1 = trabalhou. Chamar antes do 1o xcc_bg_start. */
 void xcc_set_worker_extra(int (*step)(void), void (*finish)(void));
+/* Tarefa explícita prioritária (ex.: teste de velocidade): no início do
+ * passo da hw3, antes do próximo download de capa. 1 = executou algo. */
+void xcc_set_worker_urgent(int (*step)(void));
 /* v0.21.7: sem rede por ms (só cache do pendrive) */
 void xcc_offline_for(unsigned ms);
 
@@ -167,6 +170,9 @@ int  xcc_parse_images(const char *json, xcc_imgref_t **out, int *n);
 void xcc_image_path(char *dst, size_t cap, const char *path, int kind);
 /* Nome 8.3 do arquivo no pendrive: "COVERS/1A2B3C4D.JPG" / "HERO/1A2B3C4D.JPG". */
 void xcc_file_name(char *dst, size_t cap, const char *product, int kind);
+/* Verifica SOI e EOI antes de aceitar JPEG de rede/cache: stb_image pode
+ * recuperar uma imagem truncada com faixas coloridas, sem retornar NULL. */
+int xcc_jpeg_complete(const uint8_t *jpg, size_t len);
 /* JPEG -> pixels XCC_PIX exatamente w x h (escala se precisar). malloc. */
 uint32_t *xcc_decode_jpeg(const uint8_t *jpg, size_t len, int w, int h);
 

@@ -3361,7 +3361,9 @@ static int menu_loop(int net_ok, const char *msg) {
                         /* a thread do login ocupa a hw 3 (sessão/decoder precisam dela).
                          * v0.20.2: o worker das capas também usa a hw 3, mas ele é
                          * parado logo abaixo; antes o PLAY ficava preso aqui pra sempre. */
-                        snprintf(notice, sizeof(notice), "Aguarde: o Xbox ainda está carregando o catálogo");
+                        snprintf(notice, sizeof(notice), "Catálogo ainda em andamento: %.105s",
+                                 g_lts.status[0] ? g_lts.status : "login Microsoft/Xbox");
+                        xc_log("[menu] PLAY aguardando login: %s", g_lts.status);
                     } else if (!g_native_ok || g_cat_src != 1) {
                         snprintf(notice, sizeof(notice), "Sem sessão no Xbox: faça o login (Y: tentar de novo)");
                     } else {
@@ -4000,7 +4002,8 @@ static int worker_extra_step(void) {
     cfg_save_pending();   /* v0.21.33: XC360/PAD.TXT e VOLUME.TXT */
     xw_sys_main_poll();
     if (xc_error_flush_step()) return 1; /* XC360/ERRORS.TXT; only hw3/menu */
-    if (xlu_speed_step()) return 1;   /* v0.21.43 */
+    /* A tarefa de velocidade já foi tentada ANTES do download de capas,
+     * pelo callback urgente de xcc_worker_step/task_main. */
     return xlu_step();
 }
 
@@ -4206,6 +4209,7 @@ static void menu_main(int gpu_on) {
     /* v0.20.0: catálogo/capas: ANTES do lt_start (registra os ganchos do login) */
     xcc_init(NULL);
     xcc_set_worker_extra(worker_extra_step, xlu_finish);   /* v0.20.1: log beta no worker (+ v0.21.5: WIFILOG) */
+    xcc_set_worker_urgent(xlu_speed_step);   /* rede: velocidade antes do próximo download de capa */
     /* v0.20.1: atualização; a versão tem que bater com a publicada (UPDATE.md) */
     xcu_init(XCLOUD360_BUILD_VERSION, NULL);
     if (net_thread_on && npr == 0) {

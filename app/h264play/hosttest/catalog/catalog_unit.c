@@ -258,6 +258,9 @@ static void test_decode(void) {
     free(a); free(h);
     /* truncado / lixo: sem crash */
     uint32_t *t = xcc_decode_jpeg((uint8_t *)j, len / 3, XCC_COVER_W, XCC_COVER_H);
+    CHECK(t == NULL);   /* imagem cortada NÃO pode mais gerar faixas na tela */
+    CHECK(xcc_jpeg_complete((uint8_t *)j, len));
+    CHECK(!xcc_jpeg_complete((uint8_t *)j, len / 3));
     free(t);
     CHECK(xcc_decode_jpeg((const uint8_t *)"not a jpeg at all", 17, 10, 10) == NULL);
     CHECK(xcc_decode_jpeg(NULL, 0, 10, 10) == NULL);

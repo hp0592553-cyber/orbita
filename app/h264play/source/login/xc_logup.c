@@ -481,7 +481,14 @@ static volatile int g_spd_req = 0;
 static volatile int g_spd_state = 0;   /* XLU_SPD_* */
 static volatile int g_spd_mbps10 = 0, g_spd_lat_ms = 0;
 static char g_spd_msg[96];
-void xlu_speed_request(void) { if (g_spd_state != XLU_SPD_RUNNING) { g_spd_state = XLU_SPD_WAIT; g_spd_req = 1; } }
+void xlu_speed_request(void) {
+    if (g_spd_state != XLU_SPD_RUNNING) {
+        g_spd_mbps10 = g_spd_lat_ms = 0;
+        g_spd_msg[0] = 0;
+        g_spd_state = XLU_SPD_WAIT;
+        g_spd_req = 1;
+    }
+}
 int  xlu_speed_result(int *mbps10, int *lat_ms, char *msg, size_t cap) {
     *mbps10 = g_spd_mbps10;
     *lat_ms = g_spd_lat_ms;

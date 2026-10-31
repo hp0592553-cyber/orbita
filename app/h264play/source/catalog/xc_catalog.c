@@ -566,7 +566,8 @@ static int get_jpeg(const char *product, int kind, const char *ipath, int on_dis
         uint8_t *b = (uint8_t *)malloc(IMG_BODY);
         int l = b ? xc_store_load(fname, b, IMG_BODY) : -1;
         if (l > TRAILER + 4 && !memcmp(b + l - TRAILER, k_magic[kind ? 1 : 0], 4) &&
-            !strncasecmp((char *)b + l - TRAILER + 4, product, TRAILER - 4) && b[0] == 0xFF && b[1] == 0xD8) {
+            !strncasecmp((char *)b + l - TRAILER + 4, product, TRAILER - 4) &&
+            xcc_jpeg_complete(b, (size_t)l - TRAILER)) {
             *jpg = b;
             *jlen = (size_t)l - TRAILER;
             return 0;
@@ -586,10 +587,13 @@ static int get_jpeg(const char *product, int kind, const char *ipath, int on_dis
     int rc = do_fetch(IMG_HOST, path, IMG_BODY - TRAILER, &status, &body, &len);
     net_result(rc == 0);
     if (rc != 0) return -1;
-    if (status != 200 || len < 4 || (uint8_t)body[0] != 0xFF || (uint8_t)body[1] != 0xD8) {
+    if (status != 200 || !xcc_jpeg_complete((const uint8_t *)body, len)) {
         xccp_lock();
-        set_err("imagem HTTP %s%d", "", status);
+        if (status == 200) set_err("imagem JPEG incompleto (%s%d)", "", (int)len);
+        else set_err("imagem HTTP %s%d", "", status);
         xccp_unlock();
+        xc_log("[capas] imagem rejeitada (%s, tipo %d): HTTP %d, %u bytes; JPEG incompleto ou inválido",
+               product, kind, status, (unsigned)len);
         free(body);
         return -1;
     }
@@ -977,8 +981,10 @@ static int cancel_hook(void) { return g_stop; }
  * ainda aberta na rede, só pra mandar o lote, e o main o para depois */
 volatile int xcc_logs_only = 0;
 static int (*g_xstep)(void);
+static int (*g_xurgent)(void);
 static void (*g_xfin)(void);
 void xcc_set_worker_extra(int (*step)(void), void (*finish)(void)) { g_xstep = step; g_xfin = finish; }
+void xcc_set_worker_urgent(int (*step)(void)) { g_xurgent = step; }
 
 static void task_main(void) {
     xc_err_t e;
@@ -989,7 +995,10 @@ static void task_main(void) {
     while (!g_stop) {
         xwd_beat("capas: passo do worker");
         xwd_observe();   /* v0.21.8: main + rede paradas juntas */
-        int w = xcc_logs_only ? 0 : xcc_worker_step();
+        /* Um teste de velocidade solicitado pelo usuário não deve ficar
+         * atrás de dezenas de downloads HTTPS de capas (um por passo). */
+        int w = (!g_stop && g_xurgent) ? g_xurgent() : 0;
+        if (!w && !xcc_logs_only && !g_stop) w = xcc_worker_step();
         if (!g_stop && g_xstep) w |= g_xstep();   /* v0.20.1: log beta */
         if (!w) xcn_sleep_ms(30);
     }

@@ -186,7 +186,7 @@ static void speed_row(xcs_view_t *o, const xcs_in_t *in, int *nr) {
     xui_cfg_row_t *r = &o->rows[(*nr)++];
     r->label = L("Teste de velocidade");
     switch (in->speed_state) {
-    case 1: r->value = L("esperando a conexão…"); break;
+    case 1: r->value = L("na fila: aguardando a rede ficar livre…"); break;
     case 2: r->value = L("testando…"); break;
     case 3:
         snprintf(o->b_spd, sizeof(o->b_spd), "%d,%d Mb/s  ·  servidor %d ms", in->speed_mbps10 / 10,
