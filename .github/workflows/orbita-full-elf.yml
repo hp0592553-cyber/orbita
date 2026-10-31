@@ -129,7 +129,7 @@ jobs:
               echo "=== Orbita BETA=0 ==="
               rm -f app/h264play/h264play.elf app/h264play/h264play.elf32
               make -C app/h264play clean
-              make -C app/h264play -j2 BETA=0 AUDIO=1 GPU=0 \
+              make -C app/h264play -j2 BETA=0 AUDIO=1 GPU=0 BOOT_UPDATE_FIRST=0 \
                 DECODE_THREADS=1 ALTIVEC=0 USB_INTERVAL_PIPE=0 FFMPEG_NO_PROF=1 \
                 FFMPEG_DIR=/app/.orbita-ci/ffmpeg \
                 OPUS_DIR=/app/.orbita-ci/opus-xenon \

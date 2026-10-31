@@ -2058,7 +2058,12 @@ static void xbox_login_poll(void) {
         xbox_catalog_commit();
         g_cat_src = 1;
         g_xbox_err[0] = 0;
-        /* v0.20.3: a atualização já foi procurada antes do login (g_boot_upd) */
+        /* Diagnostic build: sign-in first, then check signed updates. A
+         * release build still checks updates before login as before. */
+#if !XCLOUD360_BOOT_UPDATE_FIRST
+        g_upd_auto = 1;
+#endif
+        /* v0.20.3: release builds already checked updates before login. */
         printf("[menu] catalogo: Xbox (%d jogos)\n", g_mm.ngames);
         return;
     }
@@ -3632,7 +3637,14 @@ static int menu_loop(int net_ok, const char *msg) {
             st.kind = XUI_ST_LOADING;
             st.title = "Carregando o catálogo";
             st.text = "Entrando na conta e buscando os jogos disponíveis na nuvem.";
-            st.detail = g_lts.status[0] ? g_lts.status : NULL;
+            /* On a cold boot, the login worker has no status yet. Expose
+             * what is actually blocking it instead of an endless spinner. */
+            st.detail = g_lts.status[0] ? g_lts.status
+                      : g_netwait ? "Aguardando a rede ficar pronta..."
+                      : (g_boot_upd || xcu_running() || pend_upd) ? "Verificando atualizacoes antes de entrar..."
+                      : g_login_deferred ? "Aguardando iniciar o login Microsoft..."
+                      : !g_input_on_net ? "Thread de rede indisponivel"
+                      : "Aguardando o login Microsoft...";
             break;
         case SCR_FAIL:
             st.kind = XUI_ST_ERROR;
@@ -4143,7 +4155,9 @@ static void menu_main(int gpu_on) {
         /* v0.20.3: o login sobe no menu_loop depois da chave beta (BETA=1) e
          * da checagem de atualização da entrada */
         g_login_deferred = 1;
-        g_boot_upd = 1;
+        /* Opt-in diagnostic mode: avoid blocking sign-in behind the update
+         * service. Release builds retain the mandatory pre-login check. */
+        g_boot_upd = XCLOUD360_BOOT_UPDATE_FIRST;
         g_beta_boot = XCLOUD360_BETA;
     } else {
         g_cat_src = -1;
