@@ -43,6 +43,31 @@ jobs:
           git -C .orbita-ci/libpeer apply --check ../libpeer-switch.patch
           git -C .orbita-ci/libpeer apply ../libpeer-switch.patch
           test -s app/h264play/source/ui/xui_assets.h
+          # The GOLDEN stream is gitignored. Generate a real original baseline
+          # H.264 test pattern so embedded playback remains a valid diagnostic.
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=640x360:rate=30" \
+            -t 2 -an -c:v libx264 -preset ultrafast -pix_fmt yuv420p -profile:v baseline \
+            -f h264 "$RUNNER_TEMP/orbita-test.h264"
+          python3 - "$RUNNER_TEMP/orbita-test.h264" app/h264play/source/embedded_stream.c <<'PY'
+          import pathlib
+          import sys
+          data = pathlib.Path(sys.argv[1]).read_bytes()
+          assert data.startswith(b"\x00\x00\x00\x01") or data.startswith(b"\x00\x00\x01")
+          output = pathlib.Path(sys.argv[2])
+          with output.open("w", encoding="utf-8") as f:
+              f.write("/* CI-generated original H.264 test pattern. */\n")
+              f.write("#include <stddef.h>\n#include <stdint.h>\n")
+              f.write("const uint8_t embedded_stream[] = {\n")
+              for i in range(0, len(data), 16):
+                  f.write("    " + ",".join(str(x) for x in data[i:i+16]) + ",\n")
+              f.write("};\nconst size_t embedded_stream_len = sizeof(embedded_stream);\n")
+          print(f"Embedded original stream: {len(data)} bytes")
+          PY
+          test -s app/h264play/source/embedded_stream.c
 
       - name: Testar HTTPS publico do servidor oficial (sem autenticar)
         shell: bash

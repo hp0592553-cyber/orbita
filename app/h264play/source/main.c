@@ -594,6 +594,9 @@ static struct {
     uint32_t pc, lr, dar, srr1, word, chain[6];
     int altered;
 } g_crash;
+/* Only GPU builds link with --wrap=crashdump.
+ * Stock Free60 CPU builds keep the default libxenon exception handler. */
+#ifdef XCLOUD360_GPU
 extern void __real_crashdump(uint32_t exception, uint64_t *context);
 void __wrap_crashdump(uint32_t exception, uint64_t *context) {
     unsigned me;
@@ -621,6 +624,7 @@ void __wrap_crashdump(uint32_t exception, uint64_t *context) {
         for (;;) __asm__ __volatile__("or 1,1,1; or 2,2,2" ::: "memory");
     __real_crashdump(exception, context);
 }
+#endif /* XCLOUD360_GPU */
 static void crash_report(int raw_ok) {
     if (!g_crash.set || g_crash.logged) return;
     char l6[260];

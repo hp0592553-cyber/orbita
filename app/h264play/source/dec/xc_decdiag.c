@@ -180,7 +180,9 @@ uint64_t stream_net_busy_tb(void);
 extern int xw_diag_netlog;                  /* wifi: NETLOG raw writes */
 extern int xw_diag_lite;                    /* wifi: stats every 30 s in game */
 extern int xcw_h264_profile_plid_set(const char *plid);   /* webrtc offer */
-extern volatile int gpu_present_copy_vmx;   /* gpu_present.c */
+#ifdef XCLOUD360_GPU
+extern volatile int gpu_present_copy_vmx;   /* gpu_present.c; GPU=1 only */
+#endif
 extern volatile uint64_t xc_log_tb[8];      /* xc_port_xenon.c: time inside xc_log */
 
 volatile uint64_t xdd_tb_main_idle, xdd_tb_audio, xdd_tb_pad, xdd_tb_usbwifi;
@@ -190,7 +192,9 @@ void xdd_boot_apply(void) {
     xc_prof_on = xdd.prof;
     xpt_spin_low = xdd.spin_low;
     stream_net_lowprio = xdd.net_low;
+#ifdef XCLOUD360_GPU
     gpu_present_copy_vmx = xdd.copy_vmx;
+#endif
     xcw_h264_profile_plid_set(xdd_profile_plid(xdd.profile));
     xw_diag_lite = xdd.lite;
     if (xdd.lite && !xdd.netlog_set) xw_diag_netlog = 0;

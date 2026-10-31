@@ -40,7 +40,9 @@ int xw_ehci_release_wifi(int *bus, int *port, int release);
 int xw_ehci_enum_unknown(void);   /* v0.21.41 */
 void xw_ehci_ports_text(char *o, size_t n);   /* v0.21.43 */
 uint32_t xw_ehci_port_status(int bus, int port);
-int ohci_debug_hc(usbbus_t *bus, char *out, int cap);   /* libxenon (patch GIP): estado do HC e das portas raiz */
+#if !defined(XCLOUD360_USB_INTERVAL_PIPE) || XCLOUD360_USB_INTERVAL_PIPE != 0
+int ohci_debug_hc(usbbus_t *bus, char *out, int cap);   /* custom libxenon GIP diagnostics */
+#endif
 
 #define FIND_EVERY_MS    100
 #define PRESENT_WAIT_MS  8000
@@ -686,16 +688,22 @@ static void hs_rx(int ep, const uint8_t *b, size_t n, void *u) {
  * usb_cfe_timer (static no libxenon) faz + os ticks do GIP e do log. Pra hw1
  * durante um xc_usb_hold: controles e receptor seguem, o pendrive fica com a
  * outra thread. */
+#if !defined(XCLOUD360_USB_INTERVAL_PIPE) || XCLOUD360_USB_INTERVAL_PIPE != 0
 void usbgip_tick(void);
 void usblog_tick(void);
+#endif
 void xw_usb_poll_no_storage(void) {
     for (int i = 0; i < usb_buscnt; i++)
         if (usb_buses[i]) {
             usb_poll(usb_buses[i]);
             usb_daemon(usb_buses[i]);
         }
+#if !defined(XCLOUD360_USB_INTERVAL_PIPE) || XCLOUD360_USB_INTERVAL_PIPE != 0
+    /* Optional USB GIP/log hooks absent from stock Free60.
+     * Stock libxenon still executes usb_poll/usb_daemon above. */
     usbgip_tick();
     usblog_tick();
+#endif
 }
 
 /* v0.21.9: recuperação do RX parado, em degraus, tudo na hw1:
@@ -1157,9 +1165,13 @@ static void step_body(int held) {
                 g_last_diag = now;
                 xc_log("[wifi] OHCI ainda sem o adaptador (%u ms); porta EHCI %08x", (unsigned)(now - g_t_rel),
                        (unsigned)xw_ehci_port_status(g_rel_bus, g_rel_port));
+#if !defined(XCLOUD360_USB_INTERVAL_PIPE) || XCLOUD360_USB_INTERVAL_PIPE != 0
                 char o[220];
                 for (int i = 0; i < usb_buscnt; i++)
                     if (usb_buses[i] && ohci_debug_hc(usb_buses[i], o, sizeof(o)) > 0) xc_log("[wifi] %s", o);
+#else
+                xc_log("[wifi] diagnostico OHCI estendido indisponivel no Free60 padrao");
+#endif
             }
             if (now - g_t_rel > FS_WAIT_MS)
                 glue_fail(now, "o adaptador não apareceu no OHCI (full speed) depois da troca de porta");
