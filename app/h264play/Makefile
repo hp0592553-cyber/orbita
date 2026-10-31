@@ -67,6 +67,8 @@ SOURCES  += source/update
 # com X-Console). BETA=0 = versão estável pública: sem chave, sem tela.
 # Trocar BETA exige `make clean`.
 BETA ?= 1
+# Stock Free60 usb_open_pipe fallback, for experimental builds without custom USB patches.
+USB_INTERVAL_PIPE ?= 1
 SOURCES  += source/beta
 # v0.21.0: Wi-Fi interno do Xbox 360 S/E (Marvell 88W8786U, USB 045e:0765), WIFI.md.
 SOURCES  += source/wifi
@@ -212,7 +214,8 @@ CFLAGS   := -g -O2 -Wall $(MACHDEP) $(INCLUDE) -I$(FFMPEG_DIR) \
             -DRSTICK_GAIN=$(RSTICK_GAIN)f -DRSTICK_EXPO=$(RSTICK_EXPO)f \
             -DXCLOUD360_SKIP_DEBLOCK=$(SKIP_DEBLOCK) \
             -DXCLOUD360_DECODE_THREADS=$(DECODE_THREADS) $(MT_CFLAGS) \
-            $(GPU_CFLAGS) $(LOGIN_CFLAGS) $(AUDIO_CFLAGS) -DXCLOUD360_BETA=$(BETA)
+            $(GPU_CFLAGS) $(LOGIN_CFLAGS) $(AUDIO_CFLAGS) -DXCLOUD360_BETA=$(BETA) \
+            -DXCLOUD360_USB_INTERVAL_PIPE=$(USB_INTERVAL_PIPE)
 CXXFLAGS := $(CFLAGS)
 LDFLAGS  := -g $(MACHDEP) -Wl,--gc-sections -Wl,-Map,$(notdir $@).map \
             -L$(FFMPEG_DIR)/libavcodec -L$(FFMPEG_DIR)/libavutil $(GPU_LDFLAGS)
