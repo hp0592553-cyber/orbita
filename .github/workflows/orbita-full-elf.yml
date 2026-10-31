@@ -1,0 +1,75 @@
+name: Orbita - compilar cliente completo ELF (experimental)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/orbita-full-elf.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compilar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Obter codigo-fonte
+        uses: actions/checkout@v4
+
+      - name: Compilar cliente completo para Xenon (modo local experimental)
+        id: compile
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          mkdir -p build-reports
+          docker run --rm -v "$PWD:/app" -w /app \
+            -e DEVKITXENON=/usr/local/xenon \
+            free60/libxenon:latest /bin/bash -c '
+              export PATH=/usr/local/xenon/bin:/usr/local/xenon/usr/bin:$PATH
+              echo "Compilador:"
+              xenon-gcc --version | head -n 1
+              echo "Dependencias externas necessarias: FFmpeg Xenon, Opus Xenon, WebRTC Xenon"
+              for p in /root/ffmpeg-xenon-mt-altivec/libavcodec/libavcodec.a \
+                       /root/ffmpeg-xenon-mt-altivec/libavutil/libavutil.a \
+                       /root/opus-xenon/libopus-float.a \
+                       /root/webrtc-xenon/xenon/lib/libpeer-xc.a; do
+                if [ -s "$p" ]; then echo "OK $p"; else echo "PENDENTE $p"; fi
+              done
+              make -C app/h264play clean
+              make -C app/h264play BETA=0 -j2
+            ' > build-reports/full-build.log 2>&1
+          rc=$?
+          cat build-reports/full-build.log | tail -n 100
+          if [ "$rc" -eq 0 ] && [ -s app/h264play/h264play.elf32 ]; then
+            echo "RESULTADO: ELF compilado da fonte" | tee build-reports/status.txt
+            cp app/h264play/h264play.elf32 build-reports/orbita-experimental.elf32
+            sha256sum build-reports/orbita-experimental.elf32 > build-reports/orbita-experimental.sha256
+          else
+            echo "RESULTADO: compilacao incompleta (exit=$rc). Ver full-build.log" | tee build-reports/status.txt
+            echo "Nao confundir o executavel preexistente no repositorio com um novo build." >> build-reports/status.txt
+          fi
+          exit "$rc"
+
+      - name: Publicar relatorio e ELF apenas se gerado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbita-full-build-report
+          path: build-reports/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Exibir resultado fiel
+        if: always()
+        shell: bash
+        run: |
+          cat build-reports/status.txt >> "$GITHUB_STEP_SUMMARY" || true
+          if [ "${{ steps.compile.outcome }}" != success ]; then
+            echo "A compilacao do Orbita completo falhou. Veja relatorio anexado." >&2
+            exit 1
+          fi
+          echo "Novo ELF experimental gerado a partir do codigo-fonte." >> "$GITHUB_STEP_SUMMARY"
+          echo "Esta compilacao nao concede acesso a servidores beta nem credenciais."
