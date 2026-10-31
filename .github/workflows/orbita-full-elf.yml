@@ -25,6 +25,7 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p build-reports
+          set +e
           docker run --rm -v "$PWD:/app" -w /app \
             -e DEVKITXENON=/usr/local/xenon \
             free60/libxenon:latest /bin/bash -c '
@@ -42,6 +43,7 @@ jobs:
               make -C app/h264play BETA=0 -j2
             ' > build-reports/full-build.log 2>&1
           rc=$?
+          set -e
           cat build-reports/full-build.log | tail -n 100
           if [ "$rc" -eq 0 ] && [ -s app/h264play/h264play.elf32 ]; then
             echo "RESULTADO: ELF compilado da fonte" | tee build-reports/status.txt
