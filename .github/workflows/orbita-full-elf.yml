@@ -1,4 +1,4 @@
-name: Orbita - compilar cliente completo ELF (experimental)
+name: Orbita - build BETA=0 (unico workflow)
 
 on:
   workflow_dispatch:
@@ -11,76 +11,92 @@ permissions:
   contents: read
 
 jobs:
-  compilar:
+  orbita-beta0:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - name: Obter codigo-fonte
+      - name: Baixar codigo do Orbita
         uses: actions/checkout@v4
 
-      - name: Gerar recursos da interface no runner Linux
+      - name: Gerar interface e baixar dependencias oficiais
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m venv "$RUNNER_TEMP/orbita-python"
-          "$RUNNER_TEMP/orbita-python/bin/python" -m pip install --disable-pip-version-check pillow==11.3.0
-          "$RUNNER_TEMP/orbita-python/bin/python" app/h264play/tools/gen_xui_assets.py app/h264play/source/ui/xui_assets.h
+          mkdir -p .orbita-ci reports
+          python3 -m venv .orbita-ci/python
+          .orbita-ci/python/bin/python -m pip -q install pillow==11.3.0
+          .orbita-ci/python/bin/python app/h264play/tools/gen_xui_assets.py app/h264play/source/ui/xui_assets.h
+          git clone --quiet --depth 1 --branch n0.10.2 https://github.com/FFmpeg/FFmpeg.git .orbita-ci/ffmpeg
+          git clone --quiet --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git .orbita-ci/opus-src
           test -s app/h264play/source/ui/xui_assets.h
 
-      - name: Compilar cliente completo para Xenon (modo local experimental)
-        id: compile
+      - name: Construir bibliotecas Xenon e Orbita BETA=0
         shell: bash
-        continue-on-error: true
         run: |
-          set -uo pipefail
-          mkdir -p build-reports
           set +e
-          docker run --rm -v "$PWD:/app" -w /app \
-            -e DEVKITXENON=/usr/local/xenon \
-            free60/libxenon:latest /bin/bash -c '
+          docker run --rm -v "$PWD:/app" -w /app -e DEVKITXENON=/usr/local/xenon \
+            free60/libxenon:latest /bin/bash -eo pipefail -c '
               export PATH=/usr/local/xenon/bin:/usr/local/xenon/usr/bin:$PATH
-              echo "Compilador:"
+              echo "=== Free60 compiler ==="
               xenon-gcc --version | head -n 1
-              echo "Dependencias externas necessarias: FFmpeg Xenon, Opus Xenon, WebRTC Xenon"
-              for p in /root/ffmpeg-xenon-mt-altivec/libavcodec/libavcodec.a \
-                       /root/ffmpeg-xenon-mt-altivec/libavutil/libavutil.a \
-                       /root/opus-xenon/libopus-float.a \
-                       /root/webrtc-xenon/xenon/lib/libpeer-xc.a; do
-                if [ -s "$p" ]; then echo "OK $p"; else echo "PENDENTE $p"; fi
-              done
+              echo "=== FFmpeg 0.10.2 Xenon ==="
+              cd /app/.orbita-ci/ffmpeg
+              ./configure \
+                --target-os=none --arch=powerpc --cpu=cell \
+                --enable-cross-compile --cc=xenon-gcc --cross-prefix=xenon- \
+                --disable-shared --enable-static --disable-everything \
+                --disable-doc --disable-avdevice --disable-avfilter --disable-postproc \
+                --disable-pthreads --disable-altivec --disable-yasm --disable-asm \
+                --disable-network --enable-decoder=h264 --enable-parser=h264 \
+                --enable-demuxer=h264 --enable-protocol=file \
+                --extra-cflags="-O2 -m32 -mpowerpc64 -mhard-float -fno-pic -DXENON -D__XENON__"
+              make -j2 libavcodec/libavcodec.a libavutil/libavutil.a
+              echo "=== Opus Xenon ==="
+              cd /app
+              OPUS_SRC=/app/.orbita-ci/opus-src OPUS_OUT=/app/.orbita-ci/opus-xenon J=2 \
+                bash deps/build-opus-xenon.sh
+              echo "=== Orbita BETA=0 ==="
+              echo "Cliente original exige biblioteca WebRTC Xenon previamente compilada."
+              rm -f app/h264play/h264play.elf app/h264play/h264play.elf32
               make -C app/h264play clean
-              make -C app/h264play BETA=0 -j2
-            ' > build-reports/full-build.log 2>&1
+              make -C app/h264play -j2 BETA=0 AUDIO=1 GPU=0 \
+                DECODE_THREADS=1 ALTIVEC=0 \
+                FFMPEG_DIR=/app/.orbita-ci/ffmpeg \
+                OPUS_DIR=/app/.orbita-ci/opus-xenon \
+                WEBRTC_DIR=/app/.orbita-ci/webrtc-xenon/xenon
+              test -s app/h264play/h264play.elf32
+            ' > reports/build.log 2>&1
           rc=$?
-          set -e
-          cat build-reports/full-build.log | tail -n 100
+          echo "$rc" > reports/exitcode.txt
+          tail -n 90 reports/build.log
           if [ "$rc" -eq 0 ] && [ -s app/h264play/h264play.elf32 ]; then
-            echo "RESULTADO: ELF compilado da fonte" | tee build-reports/status.txt
-            cp app/h264play/h264play.elf32 build-reports/orbita-experimental.elf32
-            sha256sum build-reports/orbita-experimental.elf32 > build-reports/orbita-experimental.sha256
+            cp app/h264play/h264play.elf32 reports/orbita-beta0.elf32
+            sha256sum reports/orbita-beta0.elf32 > reports/orbita-beta0.sha256
+            echo "COMPILACAO_REAL_OK" > reports/status.txt
           else
-            echo "RESULTADO: compilacao incompleta (exit=$rc). Ver full-build.log" | tee build-reports/status.txt
-            echo "Nao confundir o executavel preexistente no repositorio com um novo build." >> build-reports/status.txt
+            echo "COMPILACAO_INCOMPLETA (exit=$rc) - ver build.log" > reports/status.txt
           fi
-          exit "$rc"
+          exit 0
 
-      - name: Publicar relatorio e ELF apenas se gerado
+      - name: Publicar arquivos ou relatorio da falha
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: orbita-full-build-report
-          path: build-reports/
-          if-no-files-found: error
+          name: orbita-beta0-resultado
+          path: reports/
+          if-no-files-found: warn
           retention-days: 7
 
-      - name: Exibir resultado fiel
+      - name: Confirmar resultado sem sucesso falso
         if: always()
         shell: bash
         run: |
-          cat build-reports/status.txt >> "$GITHUB_STEP_SUMMARY" || true
-          if [ "${{ steps.compile.outcome }}" != success ]; then
-            echo "A compilacao do Orbita completo falhou. Veja relatorio anexado." >&2
+          echo "## Orbita BETA=0" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f reports/status.txt ]; then
+            cat reports/status.txt >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ ! -s reports/orbita-beta0.elf32 ]; then
+            echo "Novo ELF nao foi gerado; consultar build.log" >&2
             exit 1
           fi
-          echo "Novo ELF experimental gerado a partir do codigo-fonte." >> "$GITHUB_STEP_SUMMARY"
-          echo "Esta compilacao nao concede acesso a servidores beta nem credenciais."
+          echo "ELF experimental gerado; nao autoriza acesso a servidores beta." >> "$GITHUB_STEP_SUMMARY"
