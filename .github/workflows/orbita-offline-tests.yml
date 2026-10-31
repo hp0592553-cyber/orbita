@@ -1,0 +1,62 @@
+name: Orbita - testes experimentais offline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/orbita-offline-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  teste-offline:
+    name: Testes de compatibilidade no Linux (sem servidor oficial)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v4
+
+      - name: Conferir configuracao do projeto
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'BETA ?= 1' app/h264play/Makefile
+          grep -Fq 'XCLOUD360_BETA=$(BETA)' app/h264play/Makefile
+          test -f app/h264play/hosttest/beta/run_beta.sh
+          test -f app/h264play/hosttest/beta/fake_server.py
+          echo "Configuracoes e arquivos de teste encontrados."
+          echo "Este job NAO compila um ELF para Xbox nem remove a ativacao oficial."
+
+      - name: Baixar mbedTLS para compilar os testes no Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch v3.4.0 \
+            https://github.com/Mbed-TLS/mbedtls.git "$RUNNER_TEMP/mbedtls"
+          grep -q '3.4.0' "$RUNNER_TEMP/mbedtls/include/mbedtls/build_info.h"
+
+      - name: Compilar e executar testes unitarios e servidor simulado
+        shell: bash
+        env:
+          MBEDTLS_DIR: ${{ runner.temp }}/mbedtls
+        run: |
+          set -euo pipefail
+          sh app/h264play/hosttest/beta/run_beta.sh
+          echo 'Testes locais finalizados; nenhum pedido foi enviado ao Orbita oficial.'
+
+      - name: Resumo
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Orbita - testes offline'
+            echo
+            echo 'Este workflow executa testes de codigo no Linux contra servidor local simulado.'
+            echo
+            echo '**Nao produz xenon.elf; nao gera chave beta oficial nem libera streaming.**'
+            echo
+            echo 'Para gerar um ELF real, e necessario um ambiente completo devkitxenon e dependencias da arquitetura Xenon.'
+          } >> "$GITHUB_STEP_SUMMARY"
