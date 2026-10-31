@@ -51,6 +51,11 @@ jobs:
                 --enable-demuxer=h264 --enable-protocol=file \
                 --extra-cflags="-O2 -m32 -mpowerpc64 -mhard-float -fno-pic -DXENON -D__XENON__" \
                 --extra-ldflags="-m32 -nostdlib -Wl,-e,main"
+              # FFmpeg 0.10.2 nao reconhece as funcoes matematicas de newlib no cross-link.
+              # Se HAVE_* ficar 0, o header legado redeclara essas funcoes e GCC 16 falha.
+              for func in LRINT LRINTF ROUND ROUNDF TRUNC TRUNCF; do
+                sed -i "s/#define HAVE_$func 0/#define HAVE_$func 1/" config.h
+              done
               make -j2 libavcodec/libavcodec.a libavutil/libavutil.a
               echo "=== Opus Xenon ==="
               cd /app
