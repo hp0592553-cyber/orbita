@@ -30,6 +30,15 @@ jobs:
           git clone --quiet --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git .orbita-ci/opus-src
           test -s app/h264play/source/ui/xui_assets.h
 
+      - name: Testar HTTPS publico do servidor oficial (sem autenticar)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          status=$(curl -sS --connect-timeout 10 --max-time 20 --output /dev/null --write-out '%{http_code}' https://x360.pistatrack.com/)
+          echo "HTTPS publico x360.pistatrack.com: HTTP $status" | tee reports/servidor-oficial.txt
+          test "$status" != '000'
+
       - name: Construir bibliotecas Xenon e Orbita BETA=0
         shell: bash
         run: |
@@ -49,7 +58,7 @@ jobs:
                 --disable-pthreads --disable-altivec --disable-yasm --disable-asm \
                 --disable-network --enable-decoder=h264 --enable-parser=h264 \
                 --enable-demuxer=h264 --enable-protocol=file \
-                --extra-cflags="-O2 -m32 -mpowerpc64 -mhard-float -fno-pic -DXENON -D__XENON__" \
+                --extra-cflags="-O2 -m32 -mpowerpc64 -mhard-float -fno-pic -DXENON -D__XENON__ -Wno-error=incompatible-pointer-types" \
                 --extra-ldflags="-m32 -nostdlib -Wl,-e,main"
               # FFmpeg 0.10.2 nao reconhece as funcoes matematicas de newlib no cross-link.
               # Se HAVE_* ficar 0, o header legado redeclara essas funcoes e GCC 16 falha.
