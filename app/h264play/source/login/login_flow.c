@@ -184,9 +184,12 @@ int lf_run(const lf_ui_t *ui, xa_title_t **games, int *ngames, xc_err_t *e) {
         free(ads);
         xa_endpoint_free(&f2p);
     }
+    int received = n;
+    n = xa_browse_prepare(t, n);
     int playable = 0;
     for (int i = 0; i < n; i++) playable += xa_playable(&t[i]);
-    xc_log("[cat] %d titulos, %d jogaveis", n, playable);
+    xc_log("[cat] servidor: %d titulos; menu: %d (%d com acesso, %d somente consulta)",
+           received, n, playable, n - playable);
 
     /* Nomes: cache do pendrive primeiro, displaycatalog pro que faltar. */
     char *cache = (char *)malloc(512 * 1024);
@@ -197,7 +200,7 @@ int lf_run(const lf_ui_t *ui, xa_title_t **games, int *ngames, xc_err_t *e) {
         free(cache);
     }
     int missing = 0;
-    for (int i = 0; i < n; i++) missing += xa_playable(&t[i]) && !t[i].name[0] && t[i].product[0];
+    for (int i = 0; i < n; i++) missing += !t[i].name[0] && t[i].product[0];
     xc_log("[cat] nomes: %d do cache, faltam %d", cached, missing);
     if (missing > 0) {
         ui_status(ui, "Buscando os nomes dos jogos...");
@@ -208,7 +211,9 @@ int lf_run(const lf_ui_t *ui, xa_title_t **games, int *ngames, xc_err_t *e) {
             if (out) { xc_store_save(LF_NAMES_FILE, out, strlen(out)); free(out); }
         }
     }
-    n = xa_finalize(t, n);
+    /* Atualiza a ordem dos nomes que acabaram de chegar, sem excluir
+     * jogos ainda não permitidos para esta conta. */
+    n = xa_browse_prepare(t, n);
     if (g_hooks.on_titles) g_hooks.on_titles(t, n);
     *games = t;
     *ngames = n;
