@@ -20,9 +20,9 @@ jobs:
       - name: Baixar FFmpeg 0.10.2 (fonte oficial)
         run: |
           set -euo pipefail
-          mkdir -p build-deps/ffmpeg
-          curl -fsSL --retry 3 https://ffmpeg.org/releases/ffmpeg-0.10.2.tar.bz2 -o /tmp/ffmpeg.tar.bz2
-          tar -xjf /tmp/ffmpeg.tar.bz2 --strip-components=1 -C build-deps/ffmpeg
+          mkdir -p build-deps
+          git clone --quiet --depth 1 --branch n0.10.2 https://github.com/FFmpeg/FFmpeg.git build-deps/ffmpeg
+          test -f build-deps/ffmpeg/libavcodec/avcodec.h
 
       - name: Cross-compilar bibliotecas H.264 para Xenon
         shell: bash
