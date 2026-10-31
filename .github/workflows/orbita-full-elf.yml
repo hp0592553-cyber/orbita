@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/orbita-full-elf.yml'
+      - 'deps/webrtc-xenon/build.sh'
 
 permissions:
   contents: read
