@@ -57,6 +57,26 @@ int main(void) {
     CHECK(xui_mix(0, 0xffffff, 255) == 0xffffff && xui_mix(0xffffff, 0, 255) == 0 &&
           xui_mix(0x123456, 0xffffff, 0) == 0x123456, "mix extremos");
 
+    /* Capa de catálogo (UI_RGB): teste de conversão+escala para XRGB.
+     * Uma capa vertical suave não pode virar faixas horizontais no XUI. */
+    static uint32_t cat_src[176 * 264], cat_scaled[148 * 222];
+    for (int y = 0; y < 264; y++)
+        for (int x = 0; x < 176; x++) {
+            unsigned v = (unsigned)(y / 4);
+            cat_src[y * 176 + x] = ((30u + v) << 24) | ((20u + v) << 16) | ((70u + v) << 8);
+        }
+    xui_image_t cat = { cat_src, 176, 264, 176, XUI_FMT_UIRGB };
+    xui_scale_cover(cat_scaled, 148, 222, &cat);
+    int smooth = 1;
+    for (int y = 1; y < 222; y++) {
+        uint32_t before = cat_scaled[(y-1) * 148 + 74], after = cat_scaled[y * 148 + 74];
+        int d = (int)XUI_R(after) - (int)XUI_R(before);
+        if (d < 0 || d > 2 || XUI_G(after) + 50 != XUI_R(after) ||
+            XUI_B(after) + 40 != XUI_R(after)) smooth = 0;
+    }
+    CHECK(smooth && XUI_R(cat_scaled[74]) >= 69 && XUI_R(cat_scaled[221 * 148 + 74]) <= 137,
+          "capa 176x264: escala RGB sem listras e sem troca de canais");
+
     /* tiles: cópia rápida == pset da fórmula, e bytes BGRX */
     int fw = 128, fh = 96, fs = 128;
     static uint32_t src[128 * 96], fb[128 * 96 + 4096], ref[128 * 96 + 4096];
