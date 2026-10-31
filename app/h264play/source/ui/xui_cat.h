@@ -17,7 +17,7 @@
 #include "../menu_model.h"
 #include "../catalog/xc_catalog.h"
 
-#define XUI_CAT_HASH 4096   /* > 2 * XCC_ALL_MAX */
+#define XUI_CAT_HASH 8192   /* capacidade para ~3000 titleIds */
 
 typedef struct {
     xcc_rows_t  rows;                    /* cópia do main (~150 KB) */
