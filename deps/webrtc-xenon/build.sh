@@ -195,7 +195,13 @@ build_target() {
 
   if [[ $T == xenon ]]; then
     echo "=== [$T] vmxaudit (Xenon-unsupported AltiVec ops)"
-    python3 "$HOME/ffmpeg-xenon-mt-altivec/xcloud360/vmxaudit.py" "$OUT"/lib/*.a | tail -6
+    AUDIT="${VMXAUDIT:-$HOME/ffmpeg-xenon-mt-altivec/xcloud360/vmxaudit.py}"
+    if [[ -f "$AUDIT" ]]; then
+      python3 "$AUDIT" "$OUT"/lib/*.a | tail -6
+    else
+      echo "[webrtc] WARNING: vmxaudit not run, audit script missing: $AUDIT"
+      echo "[webrtc] Build is compiled with -mno-altivec, but no binary audit was performed."
+    fi
   fi
 }
 
