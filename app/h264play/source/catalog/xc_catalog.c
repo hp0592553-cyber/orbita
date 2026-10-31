@@ -32,11 +32,31 @@
 #define WANT_MAX   64
 #define DONE_MAX   6
 #define DC_BATCH   20
-#define TRAILER    32            /* magia (4) + bigId (28) no fim do .JPG */
-/* Magia do trailer por tipo. v0.20.0: hero passou de 640x360 pra 1280x720;
- * um HERO/XXXXXXXX.JPG antigo ("XCC1") não confere e é baixado de novo no tamanho
- * novo (sobrescreve o mesmo arquivo). Capa continua "XCC1". */
-static const char k_magic[2][5] = { "XCC1", "XCH2" };
+#define TRAILER    32            /* magia (4) + bigId (24) + CRC32 (4) no fim */
+/* Rev 2026-10: nova versao de cache. Rejeita as imagens antigas sem checksum
+ * (podiam carregar com faixas apos escrita parcial no pendrive). Os ultimos
+ * quatro bytes do trailer guardam CRC32 do JPEG, separado da assinatura. */
+static const char k_magic[2][5] = { "XCC2", "XCH3" };
+
+static uint32_t jpg_crc32(const uint8_t *p, size_t n) {
+    uint32_t c = 0xffffffffu;
+    for (size_t i = 0; i < n; i++) {
+        c ^= p[i];
+        for (int k = 0; k < 8; k++)
+            c = (c >> 1) ^ ((c & 1u) ? 0xedb88320u : 0u);
+    }
+    return ~c;
+}
+static uint32_t jpg_crc_read(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+static void jpg_crc_write(uint8_t *p, uint32_t c) {
+    p[0] = (uint8_t)(c >> 24);
+    p[1] = (uint8_t)(c >> 16);
+    p[2] = (uint8_t)(c >> 8);
+    p[3] = (uint8_t)c;
+}
 #define IMG_BODY   (768 * 1024)   /* v0.20.0: hero 1280x720 q70 ~100-300 KB */
 #define DC_BODY    (8 << 20)
 #define SIGL_BODY  (2 << 20)
@@ -566,13 +586,15 @@ static int get_jpeg(const char *product, int kind, const char *ipath, int on_dis
         uint8_t *b = (uint8_t *)malloc(IMG_BODY);
         int l = b ? xc_store_load(fname, b, IMG_BODY) : -1;
         if (l > TRAILER + 4 && !memcmp(b + l - TRAILER, k_magic[kind ? 1 : 0], 4) &&
-            !strncasecmp((char *)b + l - TRAILER + 4, product, TRAILER - 4) &&
-            xcc_jpeg_complete(b, (size_t)l - TRAILER)) {
+            !strncasecmp((char *)b + l - TRAILER + 4, product, 24) &&
+            xcc_jpeg_complete(b, (size_t)l - TRAILER) &&
+            jpg_crc_read(b + l - 4) == jpg_crc32(b, (size_t)l - TRAILER)) {
             *jpg = b;
             *jlen = (size_t)l - TRAILER;
             return 0;
         }
         free(b);
+        xc_log("[capas] cache antigo ou com JPEG corrompido: %s tipo %d; baixando novamente", product, kind);
         xccp_lock();
         ent_t *e = ent_find(product);
         if (e) e->disk &= (uint8_t)~(1u << kind);
@@ -601,7 +623,10 @@ static int get_jpeg(const char *product, int kind, const char *ipath, int on_dis
     if (!b) { free(body); return -1; }
     memset(b + len, 0, TRAILER);
     memcpy(b + len, k_magic[kind ? 1 : 0], 4);
-    memcpy(b + len + 4, product, strlen(product) < TRAILER - 4 ? strlen(product) : TRAILER - 4);
+    size_t prodlen = strlen(product);
+    if (prodlen > 24) prodlen = 24;
+    memcpy(b + len + 4, product, prodlen);
+    jpg_crc_write(b + len + TRAILER - 4, jpg_crc32(b, len));
     *from_net = 1;
     int saved = xc_store_save(fname, b, len + TRAILER) == 0;
     xccp_lock();
