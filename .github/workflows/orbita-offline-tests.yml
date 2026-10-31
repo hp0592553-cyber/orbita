@@ -45,6 +45,13 @@ jobs:
         run: |
           set -euo pipefail
           sh app/h264play/hosttest/beta/run_beta.sh
+          echo '=== Login Microsoft: parsers HTTP/DNS e catalogo JSON (sem rede) ==='
+          sh app/h264play/hosttest/login/run_login.sh unit
+          echo '=== Catalogo: fixtures e parsing com ASan/UBSan (sem rede) ==='
+          sh app/h264play/hosttest/catalog/run_catalog.sh unit
+          echo '=== TLS do Xbox: verificar configuracao de inteiros ==='
+          grep -Fq '#define MBEDTLS_HAVE_INT32' deps/webrtc-xenon/mbedtls/xc360_mbedtls_webrtc_config.h
+          grep -Fq 'xenon_mpi_limb_is_32_bit' deps/webrtc-xenon/build.sh
           echo 'Testes locais finalizados; nenhum pedido foi enviado ao Orbita oficial.'
 
       - name: Resumo
