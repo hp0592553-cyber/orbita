@@ -145,7 +145,15 @@ void xdd_describe(const xdd_cfg_t *c, char *o, size_t n) {
 /* ======================================================================== */
 #ifdef XENON
 #include <libavcodec/avcodec.h>
+#if XCLOUD360_FFMPEG_NO_PROF
+#include "xc_prof_compat.h"
+/* Experimental build against stock FFmpeg: decoder profiler hooks are absent.
+ * Keep status counters ABI-compatible but zero instead of fabricating data. */
+xc_prof_t xc_prof;
+volatile int xc_prof_on;
+#else
 #include <libavcodec/xc_prof.h>
+#endif
 #include <ppc/timebase.h>
 #include "../login/xc_port.h"
 #include "../native/xc_native.h"
