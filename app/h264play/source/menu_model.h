@@ -16,8 +16,8 @@
 extern "C" {
 #endif
 
-#define MM_MAX_GAMES 1024
-#define MM_ID_LEN    32
+#define MM_MAX_GAMES 3072
+#define MM_ID_LEN    48
 #define MM_NAME_LEN  64
 #define MM_TEXT_LEN  160
 
