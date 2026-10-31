@@ -178,6 +178,7 @@ uint32_t xui_tile_offset(int x, int y, int fb_stride);
 enum {
     XUI_IT_GAMEPASS = 1 << 0,   /* jogo da assinatura: etiqueta "ASSINATURA" (v0.20.1) */
     XUI_IT_SESSION  = 1 << 1,   /* (calculado) é o jogo da sessão aberta */
+    XUI_IT_NOACCESS = 1 << 2,   /* aparece no catálogo, mas conta sem acesso */
 };
 typedef struct {
     const char *id;             /* chave das imagens (productId/titleId) */
