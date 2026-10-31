@@ -27,8 +27,8 @@
 #define SIGL_POPULAR "6a589fa0-d493-472b-8e20-3813699d7056"   /* Mais populares na nuvem */
 #define SIGL_NEW     "06323672-b8c8-43cc-b0de-32d5a9834749"   /* Adicionados recentemente */
 
-#define ENT_MAX    2048
-#define HASH_SZ    4096          /* potência de 2, > 2*ENT_MAX */
+#define ENT_MAX    3072
+#define HASH_SZ    8192          /* potência de 2, > 2*ENT_MAX */
 #define WANT_MAX   64
 #define DONE_MAX   6
 #define DC_BATCH   20
@@ -41,12 +41,12 @@ static const char k_magic[2][5] = { "XCC1", "XCH2" };
 #define DC_BODY    (8 << 20)
 #define SIGL_BODY  (2 << 20)
 #define RAW_MAX    5000
-#define TITLES_MAX 2048
+#define TITLES_MAX 3072
 #define LRU_COVERS_MAX 128
 #define LRU_HEROES_MAX 8
 #define FAILS_MAX  5
-#define ROWS_CAP   (512 * 1024)
-#define IDX_CAP    (1024 * 1024)
+#define ROWS_CAP   (768 * 1024)
+#define IDX_CAP    (2 * 1024 * 1024)
 #define IDX_SAVE_EVERY 24
 
 typedef struct {
