@@ -37,6 +37,7 @@ typedef struct {
 #define XA_F_ADSUP     0x08
 #define XA_F_ADGRANT   0x10
 #define XA_F_ADPLAY    0x20
+#define XA_BROWSE_MAX 3072   /* jogos visiveis no menu, nao confundir com acesso */
 
 typedef struct {
     char     id[48];        /* titleId (o launcher/capture-rtp usam este) */
@@ -78,7 +79,9 @@ int  xa_parse_names(const char *json, xa_title_t *t, int n);
 /* f2p: dobra a lista do xgpuwebf2p na principal (como merge_ad_supported). */
 int  xa_merge_f2p(xa_title_t **main, int *nmain, const xa_title_t *ads, int nads);
 int  xa_playable(const xa_title_t *t);
-/* Remove os não jogáveis e ordena por nome (sem caixa), como o launcher. */
+/* Orbita: navega por todos os títulos da nuvem, mas o PLAY exige xa_playable(). */
+int  xa_browse_prepare(xa_title_t *t, int n);
+/* Compatibilidade com launcher/testes: só os autorizados. */
 int  xa_finalize(xa_title_t *t, int n);
 /* UTF-8 -> ASCII imprimível (acentos latinos viram a letra base, (TM)/(R)
  * somem), espaços colapsados, corta em cap-1 com "...". */
