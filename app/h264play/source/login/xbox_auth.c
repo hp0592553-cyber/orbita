@@ -490,7 +490,12 @@ int xa_fetch_names(xa_title_t *t, int n, void (*progress)(int, int), xc_err_t *e
      * que o BR não tiver vai de novo em en-US. */
     static const char *const k_mkt[2] = { "market=BR&languages=pt-BR", "market=US&languages=en-US" };
     int resolved = 0;
+    /* Nomes sao metadados opcionais. A lista dos jogos e a autenticacao ja
+     * chegaram; nao bloqueie o PLAY por dezenas de lotes HTTPS lentos. */
+    uint64_t started = xcn_now_ms();
+    const uint64_t name_budget_ms = 30000;
     for (int pass = 0; pass < 2; pass++) {
+        if (xcn_now_ms() - started >= name_budget_ms) break;
         int m = 0;
         for (int i = 0; i < n; i++) {
             if (!xa_playable(&t[i]) || t[i].name[0] || !t[i].product[0]) continue;
@@ -502,6 +507,10 @@ int xa_fetch_names(xa_title_t *t, int n, void (*progress)(int, int), xc_err_t *e
         if (pass) xc_log("[cat] nomes: %d sem nome em pt-BR, tentando en-US", m);
         for (int s = 0; s < m; s += NAMES_BATCH) {
             if (xcn_cancelled()) break;
+            if (xcn_now_ms() - started >= name_budget_ms) {
+                xc_log("[cat] nomes opcionais: limite de 30 s atingido; abrindo o catalogo com os nomes ja obtidos");
+                break;
+            }
             char path[96 + NAMES_BATCH * 24];
             int pl = snprintf(path, sizeof(path), "/v7.0/products?bigIds=");
             for (int k = s; k < m && k < s + NAMES_BATCH; k++)
