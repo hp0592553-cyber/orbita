@@ -517,7 +517,12 @@ static void test_happy(void) {
     }
     CHECK(s.nremotes == 3 && t20 && t21 && v4, "remotos=%d", s.nremotes);
     const mock_req_t *q = find_req("POST", "/v5/sessions/cloud/play", 0);
-    CHECK(q && q->body && !strcmp(q->body, GOLDEN_PLAY), "play body");
+    /* The pure builder is checked against GOLDEN_PLAY (en-US) above.
+     * Actual Xbox sessions default to pt-BR since v0.21.38; assert the
+     * requested language and session title rather than an old en-US fixture. */
+    CHECK(q && q->body && strstr(q->body, "\\\"locale\\\":\\\"pt-BR\\\"") &&
+          strstr(q->body, "\\\"titleId\\\":\\\"FORZAHORIZON5\\\"") &&
+          strstr(q->body, "\\\"timezoneOffsetMinutes\\\":180"), "play body pt-BR");
     CHECK(q && strstr(q->headers, "X-Gssv-Client: XboxComBrowser\r\n") && strstr(q->headers, GOLDEN_DEVICE_INFO "\r\n") &&
           strstr(q->headers, "Authorization: Bearer GS-1\r\n"), "headers do play");
     q = find_req("POST", "/sdp", 0);
