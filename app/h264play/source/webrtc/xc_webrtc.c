@@ -23,6 +23,12 @@
 #include "peer_connection.h"
 #include "xc_jitter.h"
 #include "xcw_port.h"
+#ifdef XENON
+#include "../xc_wdog.h"
+#define XCW_TRACE(s) xwd_crumb(s)
+#else
+#define XCW_TRACE(s) ((void)0)
+#endif
 
 #define XCW_MAX_CANDS 8
 #define XCW_OFFER_CAP 12288
@@ -854,8 +860,10 @@ static void poll_timers(xcw_t *x, uint64_t now) {
 
 void xcw_poll(xcw_t *x) {
     if (!x || !x->pc) return;
+    XCW_TRACE("webrtc: consultar peer state");
     uint64_t now = xcw_now_ms();
     PeerConnectionState st = peer_connection_get_state(x->pc);
+    XCW_TRACE("webrtc: peer state recebido");
     switch (st) {
         case PEER_CONNECTION_CHECKING:
         case PEER_CONNECTION_CONNECTED:
@@ -864,13 +872,17 @@ void xcw_poll(xcw_t *x) {
              * timeout per loop. */
             if (now != x->last_step_ms) {
                 x->last_step_ms = now;
+                XCW_TRACE("webrtc: peer_connection_loop ICE/DTLS");
                 int r = peer_connection_loop(x->pc);
+                XCW_TRACE("webrtc: peer_connection_loop retornou");
                 if (r > 0) x->s.rx_datagrams++;
             }
             break;
         case PEER_CONNECTION_COMPLETED:
             for (int i = 0; i < x->cfg.max_drain; i++) {
+                XCW_TRACE("webrtc: peer_connection_loop midia");
                 int r = peer_connection_loop(x->pc);
+                XCW_TRACE("webrtc: peer_connection_loop midia retornou");
                 if (r <= 0) break;
                 x->s.rx_datagrams++;
             }
@@ -880,7 +892,9 @@ void xcw_poll(xcw_t *x) {
     }
     /* usrsctp timers (no timer thread): every >= 10 ms like its own thread */
     if (x->last_sctp_ms && now - x->last_sctp_ms >= 10) {
+        XCW_TRACE("webrtc: timers SCTP");
         sctp_usrsctp_handle_timers((uint32_t)(now - x->last_sctp_ms));
+        XCW_TRACE("webrtc: timers SCTP retornaram");
         x->last_sctp_ms = now;
     }
     if (st == PEER_CONNECTION_COMPLETED && x->cfg.consent_interval_ms > 0 &&
@@ -891,7 +905,9 @@ void xcw_poll(xcw_t *x) {
     /* green-nx dead-media rule: ICE up but DTLS silent for dead_media_ms */
     if (st == PEER_CONNECTION_CONNECTED && x->t_ice_abs && now - x->t_ice_abs > (uint64_t)x->cfg.dead_media_ms)
         set_state(x, XCW_FAILED, "dead media: ICE up but DTLS never completed");
+    XCW_TRACE("webrtc: poll_timers");
     poll_timers(x, now);
+    XCW_TRACE("webrtc: poll_timers retornou");
 }
 
 xcw_state_t xcw_state(xcw_t *x) { return x->st; }
