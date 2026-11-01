@@ -64,7 +64,7 @@ Ordem de trabalho do worker em cada `xcc_worker_step()`:
 2. `ROWS.TXT` pendente;
 3. SIGLs (uma vez por sessão; se falhar, tenta de novo em 60 s);
 4. **pedidos visíveis**: lote do displaycatalog se faltar a URL, depois pendrive ou download, e decode;
-5. fundo: URLs e capas que faltam, na ordem das fileiras, **só pro pendrive** (sem decode), com 250 ms entre downloads;
+5. fundo: URLs, capas e artes Hero que faltam, na ordem das fileiras, **só pro pendrive** (sem decode), com 250 ms entre downloads;
 6. `IMGIDX.TXT` (a cada 24 mudanças, ou quando o fundo acaba).
 
 Tratamento de falhas:
