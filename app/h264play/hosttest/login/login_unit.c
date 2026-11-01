@@ -209,6 +209,34 @@ static void test_json(void) {
     free(t);
 }
 
+static void test_regions(void) {
+    xa_endpoint_t ep;
+    memset(&ep, 0, sizeof(ep));
+    const char *j = "{\"offeringSettings\":{\"regions\":["
+        "{\"baseUri\":\"http://bad.core.gssv-play-prod.xboxlive.com\",\"isDefault\":true},"
+        "{\"baseUri\":\"https://eus.core.gssv-play-prod.xboxlive.com\",\"isDefault\":false},"
+        "{\"baseUri\":\"https://brs.core.gssv-play-prod.xboxlive.com\",\"isDefault\":true},"
+        "{\"baseUri\":\"https://brs.core.gssv-play-prod.xboxlive.com\"},"
+        "{\"baseUri\":\"https://brs.core.gssv-play-prod.xboxlive.com.evil.test\"},"
+        "{\"baseUri\":\"https://brs.core.gssv-play-prod.xboxlive.com/steal\"}"
+        "]}}";
+    CHECK(xa_region_select(j, &ep) == 2);
+    CHECK(!strcmp(ep.host, "brs.core.gssv-play-prod.xboxlive.com"));
+    CHECK(ep.nfallback == 1);
+    CHECK(!strcmp(ep.fallback[0], "eus.core.gssv-play-prod.xboxlive.com"));
+
+    memset(&ep, 0, sizeof(ep));
+    CHECK(xa_region_select("{\"offeringSettings\":{\"regions\":["
+            "{\"baseUri\":\"https://weu.core.gssv-play-prod.xboxlive.com\"}]}}", &ep) == 1);
+    CHECK(!strcmp(ep.host, "weu.core.gssv-play-prod.xboxlive.com"));
+
+    memset(&ep, 0, sizeof(ep));
+    CHECK(xa_region_select("{\"offeringSettings\":{\"regions\":["
+            "{\"baseUri\":\"https://evil.example.net\",\"isDefault\":true}]}}", &ep) == 0);
+    CHECK(!ep.host[0] && !ep.nfallback);
+    CHECK(xa_region_select("{ invalid", &ep) == 0);
+}
+
 static void test_text(void) {
     char b[64];
     xa_ascii_fold(b, sizeof(b), "  Assassin\xe2\x80\x99s  Creed\xc2\xae Shadows\xe2\x84\xa2 ");
@@ -276,6 +304,7 @@ int main(int argc, char **argv) {
     test_http();
     test_dns();
     test_json();
+    test_regions();
     test_text();
     if (argc > 1) test_catalog_json(argv[1]);
     printf("login_unit: %d checks, %d falhas\n", g_n, g_fail);
