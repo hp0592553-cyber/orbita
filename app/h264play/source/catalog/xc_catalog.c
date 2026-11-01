@@ -679,7 +679,9 @@ static int pick_wanted(job_t *j, uint64_t now) {
     return 0;
 }
 
-/* lock: fundo — URLs e capas que faltam no pendrive, na ordem das fileiras. */
+/* lock: fundo — salva no USB as capas E as artes de fundo oficiais.
+ * Não decodifica o catálogo inteiro: só baixa/guarda os JPEGs; o hero é
+ * decodificado quando o jogo recebe foco. */
 static int pick_background(job_t *j, uint64_t now) {
     for (int r = 0; r < XCC_NROWS; r++) {
         for (int i = 0; i < g_rows.row[r].n; i++) {
@@ -691,16 +693,20 @@ static int pick_background(job_t *j, uint64_t now) {
                 snprintf(j->product, sizeof(j->product), "%s", e->product);
                 return 1;
             }
-            if (!e->path[XCC_COVER][0] || (e->disk & 1) || (e->busy & 1)) continue;
-            if (e->fails[XCC_COVER] >= FAILS_MAX || now < e->retry_at[XCC_COVER]) continue;
-            j->type = 2;
-            j->kind = XCC_COVER;
-            j->decode = 0;
-            j->on_disk = 0;
-            snprintf(j->product, sizeof(j->product), "%s", e->product);
-            snprintf(j->path, sizeof(j->path), "%s", e->path[XCC_COVER]);
-            e->busy |= 1;
-            return 1;
+            /* Primeiro poster/box art; depois SuperHeroArt/TitledHeroArt. */
+            for (int kind = XCC_COVER; kind <= XCC_HERO; kind++) {
+                unsigned bit = 1u << kind;
+                if (!e->path[kind][0] || (e->disk & bit) || (e->busy & bit)) continue;
+                if (e->fails[kind] >= FAILS_MAX || now < e->retry_at[kind]) continue;
+                j->type = 2;
+                j->kind = kind;
+                j->decode = 0;       /* arte de fundo fica no USB até receber foco */
+                j->on_disk = 0;
+                snprintf(j->product, sizeof(j->product), "%s", e->product);
+                snprintf(j->path, sizeof(j->path), "%s", e->path[kind]);
+                e->busy |= (uint8_t)bit;
+                return 1;
+            }
         }
     }
     return 0;
