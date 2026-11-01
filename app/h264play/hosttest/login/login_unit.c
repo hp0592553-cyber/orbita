@@ -204,6 +204,8 @@ static void test_json(void) {
     CHECK(!xa_playable(&t[2]) && !xa_playable(&t[3]));
     CHECK(find(t, n, "NOTMINE") != NULL);
     free(t);
+    CHECK(xa_parse_titles("{\"error\":\"ServiceUnavailable\"}", &t, &n) == -1);
+    CHECK(xa_parse_titles("{\"results\":{}}", &t, &n) == -1);
     CHECK(xa_parse_titles("{nao json", &t, &n) == -1);
     CHECK(xa_parse_titles("{\"results\":[]}", &t, &n) == 0 && n == 0);
     free(t);
