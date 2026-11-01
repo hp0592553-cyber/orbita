@@ -52,6 +52,8 @@ jobs:
           sh app/h264play/hosttest/login/run_login.sh unit
           echo '=== Catalogo: fixtures e parsing com ASan/UBSan (sem rede) ==='
           sh app/h264play/hosttest/catalog/run_catalog.sh unit
+          echo '=== Sincronizacao offline do cache XC360 ==='
+          python3 tools/orbita-sync/sync_cache.py --self-test
           echo '=== Iniciar jogo, fila e sessao xCloud com servidor GSSV simulado ==='
           sh app/h264play/hosttest/session/run_session.sh unit
           echo '=== Interface grafica e renderizacao de capas (simulada) ==='
