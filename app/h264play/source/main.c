@@ -2950,7 +2950,6 @@ static int menu_loop(int net_ok, const char *msg) {
     char title[120];
     snprintf(notice, sizeof(notice), "%s", msg ? msg : "");
     unsigned catalog_login_seen = g_lt_runs_seen;
-    uint64_t play_pending_at = 0;
     uint64_t rep_up = 0, rep_dn = 0, rep_lf = 0, rep_rt = 0;
     menu_btn_t prev, b;
     /* Botões já apertados na entrada (Back+Start do jogo, A do teste) não
@@ -3253,27 +3252,13 @@ static int menu_loop(int net_ok, const char *msg) {
          * sessão anterior liberarem. O mesmo jogo aberto = volta na hora. */
         /* Never leave A:Jogar silently pending forever if a cover download
          * is stuck while releasing hw3. Do not kill a running session. */
-        if (g_next_on && !waiting && play_pending_at &&
-            now - play_pending_at > 45000000ULL) {
-            int catalog_busy = xcc_bg_running() || lt_running();
-            g_next_on = 0;
-            play_pending_at = 0;
-            snprintf(notice, sizeof(notice), "%s",
-                     catalog_busy
-                         ? "Os downloads/login demoraram demais. Aperte A para tentar novamente."
-                         : "A sessão anterior não liberou a tempo. Aperte A para tentar novamente.");
-            xc_log("[menu] PLAY pendente cancelado apos 45 s (%s)",
-                   catalog_busy ? "catalogo/login" : "sessao/hw3");
-        }
         if (g_next_on && !waiting && screen == SCR_LIST && !xcc_bg_running() && !lt_running()) {
             const mm_game_t *g = &g_next_play;
             char sid[48];
             int ss = xn_session(sid, sizeof(sid), NULL, 0);
             if (ss == XN_SESS_PAUSED && !strcmp(sid, g->id)) {
-                /* Só encerra a espera quando a retomada realmente foi aceita. */
+                g_next_on = 0;
                 if (xn_resume(g->id) == XN_OK) {
-                    g_next_on = 0;
-                    play_pending_at = 0;
                     stream_discard();
                     g_xn_seen = 0;   /* reaplica o STATE atual (STREAMING) */
                     g_t_video_first = 0;
@@ -3285,20 +3270,15 @@ static int menu_loop(int net_ok, const char *msg) {
                     waiting = 1;
                     notice[0] = '\0';
                 } else {
-                    /* A retomada falhou: DELETE e aguarda a sessão liberar. */
+                    /* não deu pra retomar: encerra e abre uma nova */
                     printf("[menu] %s: retomada falhou, DELETE e sessao nova\n", g->id);
                     xn_stop();
-                    snprintf(notice, sizeof(notice), "Encerrando a sessão anterior...");
+                    g_next_on = 1;
                 }
             } else if (ss == XN_SESS_PAUSED) {
-                xn_stop();   /* outro jogo aberto: DELETE antes */
-                snprintf(notice, sizeof(notice), "Encerrando a sessão anterior...");
-            } else if (!xn_can_play()) {
-                /* Não zera play_pending_at aqui: a sessão ainda pode estar em teardown. */
-                snprintf(notice, sizeof(notice), "Aguarde: liberando a sessão anterior...");
-            } else {
+                xn_stop();   /* outro jogo aberto: DELETE antes (já pedido no A; reforço) */
+            } else if (xn_can_play()) {
                 g_next_on = 0;
-                play_pending_at = 0;
                 int f2p = (xbox_title_flags(g->id) & XA_F_ADPLAY) != 0;
 #ifdef ORBITA_TEST_F2P_GENSHIN
                 if (!strcmp(g->id, "GENSHINIMPACT")) f2p = 1;   /* teste: Genshin pelo caminho dos gratuitos */
@@ -3318,11 +3298,6 @@ static int menu_loop(int net_ok, const char *msg) {
                     notice[0] = '\0';
                     g_mm.state = MM_ST_NONE;
                     g_mm.state_text[0] = '\0';
-                } else if (r == XN_EBUSY) {
-                    /* Corrida entre a checagem e xn_play: repete com limite. */
-                    g_next_on = 1;
-                    play_pending_at = now;
-                    snprintf(notice, sizeof(notice), "Aguarde: liberando a sessão anterior...");
                 } else {
                     snprintf(notice, sizeof(notice), "Não consegui iniciar a sessão no Xbox (%d)", r);
                     xlu_flush_soon();
@@ -3389,7 +3364,6 @@ static int menu_loop(int net_ok, const char *msg) {
                         int ss = xn_session(sid, sizeof(sid), NULL, 0);
                         g_next_play = *g;
                         g_next_on = 1;
-                        play_pending_at = now;
                         if (xcc_bg_running()) {
                             xcc_bg_stop();   /* regra da hw 3 */
                             snprintf(notice, sizeof(notice),
@@ -3408,7 +3382,6 @@ static int menu_loop(int net_ok, const char *msg) {
             }
             if (PRESSED(b) && !mm_press_b(&g_mm) && g_next_on) {
                 g_next_on = 0;
-                play_pending_at = 0;
                 snprintf(notice, sizeof(notice), "Cancelado");
             }
         } else if (screen != SCR_BKEY && screen != SCR_CFG && screen != SCR_WIFI && screen != SCR_WKEY) {
