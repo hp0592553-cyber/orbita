@@ -217,13 +217,13 @@ int lf_run(const lf_ui_t *ui, xa_title_t **games, int *ngames, xc_err_t *e) {
     {
         char info[800];
         int w = snprintf(info, sizeof(info),
-            "Orbita - servidores descobertos (sem credenciais)\\n"
-            "xgpuweb: %s; regiao: %s; titulos: %d\\n"
-            "xgpuwebf2p: %s; regiao: %s; titulos: %d\\n"
-            "Catalogo disponivel nesta sessao: %d\\n"
-            "Metadados: displaycatalog.mp.microsoft.com\\n"
-            "Imagens: store-images.s-microsoft.com\\n"
-            "Fileiras: catalog.gamepass.com\\n",
+            "Orbita - servidores descobertos (sem credenciais)\n"
+            "xgpuweb: %s; regiao: %s; titulos: %d\n"
+            "xgpuwebf2p: %s; regiao: %s; titulos: %d\n"
+            "Catalogo disponivel nesta sessao: %d\n"
+            "Metadados: displaycatalog.mp.microsoft.com\n"
+            "Imagens: store-images.s-microsoft.com\n"
+            "Fileiras: catalog.gamepass.com\n",
             got_cloud ? "ok" : (have_cloud ? "falha na lista" : "sem acesso"),
             have_cloud ? cloud.host : "-", count_cloud,
             got_f2p ? "ok" : (have_f2p ? "falha na lista" : "sem acesso"),
@@ -236,6 +236,7 @@ int lf_run(const lf_ui_t *ui, xa_title_t **games, int *ngames, xc_err_t *e) {
            count_cloud, count_f2p, n);
     if (have_cloud) xa_endpoint_free(&cloud);
     if (have_f2p) xa_endpoint_free(&f2p);
+    memset(e, 0, sizeof(*e));  /* sucesso da oferta F2P limpa erro anterior do xgpuweb */
     int received = n;
     n = xa_browse_prepare(t, n);
     int playable = 0;
