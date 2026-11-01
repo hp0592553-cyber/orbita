@@ -170,9 +170,6 @@ int  xcc_parse_images(const char *json, xcc_imgref_t **out, int *n);
 void xcc_image_path(char *dst, size_t cap, const char *path, int kind);
 /* Nome 8.3 do arquivo no pendrive: "COVERS/1A2B3C4D.JPG" / "HERO/1A2B3C4D.JPG". */
 void xcc_file_name(char *dst, size_t cap, const char *product, int kind);
-/* Verifica SOI e EOI antes de aceitar JPEG de rede/cache: stb_image pode
- * recuperar uma imagem truncada com faixas coloridas, sem retornar NULL. */
-int xcc_jpeg_complete(const uint8_t *jpg, size_t len);
 /* JPEG -> pixels XCC_PIX exatamente w x h (escala se precisar). malloc. */
 uint32_t *xcc_decode_jpeg(const uint8_t *jpg, size_t len, int w, int h);
 
