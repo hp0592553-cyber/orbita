@@ -158,32 +158,84 @@ int lf_run(const lf_ui_t *ui, xa_title_t **games, int *ngames, xc_err_t *e) {
     xa_secret_free(&user);
     if (r != XA_OK) return -1;
 
-    ui_status(ui, "Entrando no xCloud...");
+    ui_status(ui, "Descobrindo servidores Xbox Cloud...");
     xa_endpoint_t cloud, f2p;
-    r = xa_streaming_login("xgpuweb", gssv, &cloud, e);
-    if (r != XA_OK) { xa_secret_free(&gssv); return -1; }
-    xc_log("[login] xCloud regiao %s", cloud.host);
-    xc_err_t e2;
+    xc_err_t e2, cloud_err;
+    memset(&cloud, 0, sizeof(cloud));
+    memset(&f2p, 0, sizeof(f2p));
+    memset(&cloud_err, 0, sizeof(cloud_err));
     memset(&e2, 0, sizeof(e2));
+    /* Algumas contas podem autenticar apenas no offering gratuito. Nesse caso
+     * o Orbita não deve descartar Fortnite porque o xgpuweb deu HTTP 403. */
+    int have_cloud = xa_streaming_login("xgpuweb", gssv, &cloud, &cloud_err) == XA_OK;
     int have_f2p = xa_streaming_login("xgpuwebf2p", gssv, &f2p, &e2) == XA_OK;
-    if (!have_f2p) xc_log("[login] xgpuwebf2p indisponivel: %s", e2.msg);
     xa_secret_free(&gssv);
+    if (!have_cloud) xc_log("[server] xgpuweb: %s", cloud_err.msg);
+    if (!have_f2p) xc_log("[server] xgpuwebf2p: %s", e2.msg);
+    if (!have_cloud && !have_f2p) { *e = cloud_err; return -1; }
 
     ui_status(ui, "Baixando o catalogo...");
     xa_title_t *t = NULL;
-    int n = 0;
-    r = xa_fetch_titles(&cloud, &t, &n, e);
-    if (r == XA_OK && g_hooks.on_cloud) g_hooks.on_cloud(&cloud);
-    xa_endpoint_free(&cloud);
-    if (r != XA_OK) { if (have_f2p) xa_endpoint_free(&f2p); return -1; }
+    int n = 0, count_cloud = 0, count_f2p = 0;
+    int got_cloud = 0, got_f2p = 0;
+    if (have_cloud) {
+        r = xa_fetch_titles(&cloud, &t, &n, e);
+        got_cloud = r == XA_OK;
+        if (got_cloud) count_cloud = n;
+        else xc_log("[cat] xgpuweb indisponivel: %s", e->msg);
+    }
     if (have_f2p) {
         xa_title_t *ads = NULL;
         int na = 0;
-        if (xa_fetch_titles(&f2p, &ads, &na, &e2) == XA_OK) xa_merge_f2p(&t, &n, ads, na);
-        else xc_log("[cat] catalogo f2p falhou: %s", e2.msg);
+        int fr = xa_fetch_titles(&f2p, &ads, &na, &e2);
+        if (fr == XA_OK) {
+            got_f2p = 1;
+            count_f2p = na;
+            if (xa_merge_f2p(&t, &n, ads, na) != 0) {
+                free(ads); free(t);
+                if (have_cloud) xa_endpoint_free(&cloud);
+                xa_endpoint_free(&f2p);
+                e->code = HTTPS_ETOOBIG;
+                snprintf(e->msg, sizeof(e->msg), "sem memoria ao unir catalogos");
+                return -1;
+            }
+        } else xc_log("[cat] xgpuwebf2p indisponivel: %s", e2.msg);
         free(ads);
-        xa_endpoint_free(&f2p);
     }
+    if (!got_cloud && !got_f2p) {
+        if (have_cloud) xa_endpoint_free(&cloud);
+        if (have_f2p) xa_endpoint_free(&f2p);
+        if (!have_cloud) *e = e2;
+        return -1;
+    }
+    if (g_hooks.on_cloud) {
+        if (got_cloud) g_hooks.on_cloud(&cloud);
+        else if (got_f2p) g_hooks.on_cloud(&f2p);
+    }
+    /* Diagnostico local dos endpoints (somente hosts e contagens, SEM gsToken
+     * ou credenciais OAuth). Ajuda a diferenciar rede, assinatura e cache. */
+    {
+        char info[800];
+        int w = snprintf(info, sizeof(info),
+            "Orbita - servidores descobertos (sem credenciais)\\n"
+            "xgpuweb: %s; regiao: %s; titulos: %d\\n"
+            "xgpuwebf2p: %s; regiao: %s; titulos: %d\\n"
+            "Catalogo disponivel nesta sessao: %d\\n"
+            "Metadados: displaycatalog.mp.microsoft.com\\n"
+            "Imagens: store-images.s-microsoft.com\\n"
+            "Fileiras: catalog.gamepass.com\\n",
+            got_cloud ? "ok" : (have_cloud ? "falha na lista" : "sem acesso"),
+            have_cloud ? cloud.host : "-", count_cloud,
+            got_f2p ? "ok" : (have_f2p ? "falha na lista" : "sem acesso"),
+            have_f2p ? f2p.host : "-", count_f2p, n);
+        if (w > 0 && w < (int)sizeof(info) &&
+            xc_store_save("SERVERS.TXT", info, (size_t)w) != 0)
+            xc_log("[server] nao consegui gravar XC360/SERVERS.TXT");
+    }
+    xc_log("[cat] respostas: xgpuweb=%d xgpuwebf2p=%d, unidos=%d",
+           count_cloud, count_f2p, n);
+    if (have_cloud) xa_endpoint_free(&cloud);
+    if (have_f2p) xa_endpoint_free(&f2p);
     int received = n;
     n = xa_browse_prepare(t, n);
     int playable = 0;
