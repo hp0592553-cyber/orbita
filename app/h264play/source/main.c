@@ -3254,22 +3254,26 @@ static int menu_loop(int net_ok, const char *msg) {
         /* Never leave A:Jogar silently pending forever if a cover download
          * is stuck while releasing hw3. Do not kill a running session. */
         if (g_next_on && !waiting && play_pending_at &&
-            now - play_pending_at > 45000000ULL &&
-            (xcc_bg_running() || lt_running())) {
+            now - play_pending_at > 45000000ULL) {
+            int catalog_busy = xcc_bg_running() || lt_running();
             g_next_on = 0;
             play_pending_at = 0;
-            snprintf(notice, sizeof(notice),
-                     "Não consegui liberar a rede/capas para iniciar o jogo. Aperte A para tentar novamente.");
-            xc_log("[menu] PLAY pendente cancelado: hw3 ocupada por mais de 45 s");
+            snprintf(notice, sizeof(notice), "%s",
+                     catalog_busy
+                         ? "Os downloads/login demoraram demais. Aperte A para tentar novamente."
+                         : "A sessão anterior não liberou a tempo. Aperte A para tentar novamente.");
+            xc_log("[menu] PLAY pendente cancelado apos 45 s (%s)",
+                   catalog_busy ? "catalogo/login" : "sessao/hw3");
         }
         if (g_next_on && !waiting && screen == SCR_LIST && !xcc_bg_running() && !lt_running()) {
-            play_pending_at = 0;
             const mm_game_t *g = &g_next_play;
             char sid[48];
             int ss = xn_session(sid, sizeof(sid), NULL, 0);
             if (ss == XN_SESS_PAUSED && !strcmp(sid, g->id)) {
-                g_next_on = 0;
+                /* Só encerra a espera quando a retomada realmente foi aceita. */
                 if (xn_resume(g->id) == XN_OK) {
+                    g_next_on = 0;
+                    play_pending_at = 0;
                     stream_discard();
                     g_xn_seen = 0;   /* reaplica o STATE atual (STREAMING) */
                     g_t_video_first = 0;
@@ -3281,15 +3285,20 @@ static int menu_loop(int net_ok, const char *msg) {
                     waiting = 1;
                     notice[0] = '\0';
                 } else {
-                    /* não deu pra retomar: encerra e abre uma nova */
+                    /* A retomada falhou: DELETE e aguarda a sessão liberar. */
                     printf("[menu] %s: retomada falhou, DELETE e sessao nova\n", g->id);
                     xn_stop();
-                    g_next_on = 1;
+                    snprintf(notice, sizeof(notice), "Encerrando a sessão anterior...");
                 }
             } else if (ss == XN_SESS_PAUSED) {
-                xn_stop();   /* outro jogo aberto: DELETE antes (já pedido no A; reforço) */
-            } else if (xn_can_play()) {
+                xn_stop();   /* outro jogo aberto: DELETE antes */
+                snprintf(notice, sizeof(notice), "Encerrando a sessão anterior...");
+            } else if (!xn_can_play()) {
+                /* Não zera play_pending_at aqui: a sessão ainda pode estar em teardown. */
+                snprintf(notice, sizeof(notice), "Aguarde: liberando a sessão anterior...");
+            } else {
                 g_next_on = 0;
+                play_pending_at = 0;
                 int f2p = (xbox_title_flags(g->id) & XA_F_ADPLAY) != 0;
 #ifdef ORBITA_TEST_F2P_GENSHIN
                 if (!strcmp(g->id, "GENSHINIMPACT")) f2p = 1;   /* teste: Genshin pelo caminho dos gratuitos */
@@ -3309,6 +3318,11 @@ static int menu_loop(int net_ok, const char *msg) {
                     notice[0] = '\0';
                     g_mm.state = MM_ST_NONE;
                     g_mm.state_text[0] = '\0';
+                } else if (r == XN_EBUSY) {
+                    /* Corrida entre a checagem e xn_play: repete com limite. */
+                    g_next_on = 1;
+                    play_pending_at = now;
+                    snprintf(notice, sizeof(notice), "Aguarde: liberando a sessão anterior...");
                 } else {
                     snprintf(notice, sizeof(notice), "Não consegui iniciar a sessão no Xbox (%d)", r);
                     xlu_flush_soon();
