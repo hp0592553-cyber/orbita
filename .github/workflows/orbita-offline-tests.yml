@@ -2,6 +2,13 @@ name: Orbita - testes experimentais offline
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/orbita-offline-tests.yml'
+      - 'app/h264play/source/**'
+      - 'app/h264play/hosttest/**'
+      - 'deps/webrtc-xenon/mbedtls/**'
   push:
     branches: [main]
     paths:
