@@ -3393,7 +3393,7 @@ static int menu_loop(int net_ok, const char *msg) {
                         if (xcc_bg_running()) {
                             xcc_bg_stop();   /* regra da hw 3 */
                             snprintf(notice, sizeof(notice),
-                                     "Preparando o jogo: finalizando os downloads de capas...");
+                                     "Preparando o jogo: liberando a conexão de imagens...");
                         }
                         if (ss == XN_SESS_PAUSED && strcmp(sid, g->id)) {
                             printf("[menu] %s aberto: DELETE antes de abrir %s\n", sid, g->id);
