@@ -373,7 +373,7 @@ static void test_flow(void) {
     CHECK(k < 400);
     xcc_status(&st);
     CHECK(st.n_covers_disk == 39);
-    CHECK(st.downloads == 39);
+    CHECK(st.downloads == 78); /* 39 capas + 39 fundos oficiais */
     CHECK(st.decodes == 5);
     CHECK(st.ram_covers == 5);
     CHECK(file_exists(store(), "IMGIDX.TXT"));
@@ -441,7 +441,7 @@ static void test_cache_offline(void) {
     }
     xcc_status_t st;
     xcc_status(&st);
-    CHECK(st.n_covers_disk == 39 && st.n_heroes_disk == 1 && st.n_with_urls == 39);
+    CHECK(st.n_covers_disk == 39 && st.n_heroes_disk == 39 && st.n_with_urls == 39);
     /* capas do pendrive mesmo sem rede */
     const char *vis[3] = { g_rows.row[XCC_ROW_NEW].items[0].product, g_rows.row[XCC_ROW_NEW].items[1].product,
                            g_rows.row[XCC_ROW_NEW].items[2].product };
