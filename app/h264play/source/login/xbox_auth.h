@@ -46,9 +46,12 @@ typedef struct {
     unsigned flags;
 } xa_title_t;
 
+#define XA_REGION_FALLBACKS 3
 typedef struct {
-    char  host[128];        /* ex. "brs.core.gssv-play-prod.xboxlive.com" */
-    char *token;            /* gsToken, malloc */
+    char  host[128];        /* regiao selecionada por /v2/login/user */
+    char  fallback[XA_REGION_FALLBACKS][128]; /* alternativas confiáveis da mesma resposta */
+    unsigned nfallback;
+    char *token;            /* gsToken, malloc; nunca registrar em log */
 } xa_endpoint_t;
 
 void xa_devcode_free(xa_devcode_t *d);
@@ -63,8 +66,12 @@ int xa_refresh(const char *refresh, char **refresh_new, char **access, xc_err_t 
 int xa_user_authenticate(const char *access, char **user_token, xc_err_t *e);
 int xa_xsts_authorize(const char *user_token, const char *relying_party, char **xsts, xc_err_t *e);
 int xa_streaming_login(const char *offering, const char *gssv_token, xa_endpoint_t *ep, xc_err_t *e);
+/* Analisa offeringSettings.regions, prioriza isDefault e aceita SOMENTE
+ * URLs HTTPS sob *.core.gssv-play-prod.xboxlive.com (sem credenciais). 
+ * Retorno = quantidade de regiões válidas armazenadas, 0 = nenhuma. */
+int xa_region_select(const char *login_json, xa_endpoint_t *ep);
 /* /v2/titles -> lista (malloc). */
-int xa_fetch_titles(const xa_endpoint_t *ep, xa_title_t **out, int *n, xc_err_t *e);
+int xa_fetch_titles(xa_endpoint_t *ep, xa_title_t **out, int *n, xc_err_t *e);
 /* /v2/titles/mru?mr=<max> ("Voltar a jogar" do xbox.com/play): mesmo formato
  * de /v2/titles, na ordem do mais recente. Lista malloc (pode vir vazia). */
 int xa_fetch_mru(const xa_endpoint_t *ep, int max, xa_title_t **out, int *n, xc_err_t *e);
