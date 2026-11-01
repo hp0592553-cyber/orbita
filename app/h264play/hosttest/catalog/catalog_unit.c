@@ -438,7 +438,7 @@ static void test_cache_offline(void) {
     }
     xcc_status_t st;
     xcc_status(&st);
-    CHECK(st.n_covers_disk == 39 && st.n_heroes_disk == 0 && st.n_with_urls == 39);
+    CHECK(st.n_covers_disk == 39 && st.n_heroes_disk == 1 && st.n_with_urls == 39);
     /* capas do pendrive mesmo sem rede */
     const char *vis[3] = { g_rows.row[XCC_ROW_NEW].items[0].product, g_rows.row[XCC_ROW_NEW].items[1].product,
                            g_rows.row[XCC_ROW_NEW].items[2].product };
