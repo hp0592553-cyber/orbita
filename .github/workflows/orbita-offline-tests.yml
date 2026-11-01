@@ -54,6 +54,9 @@ jobs:
           sh app/h264play/hosttest/catalog/run_catalog.sh unit
           echo '=== Sincronizacao offline do cache XC360 ==='
           python3 tools/orbita-sync/sync_cache.py --self-test
+          echo '=== Orcamento do pump UDP (preserva Wi-Fi e controle) ==='
+          cc -std=c11 -Wall -Wextra -Werror app/h264play/hosttest/webrtc/udp_tx_budget_test.c -o "$RUNNER_TEMP/udp_tx_budget_test"
+          "$RUNNER_TEMP/udp_tx_budget_test"
           echo '=== Iniciar jogo, fila e sessao xCloud com servidor GSSV simulado ==='
           sh app/h264play/hosttest/session/run_session.sh unit
           echo '=== Interface grafica e renderizacao de capas (simulada) ==='
