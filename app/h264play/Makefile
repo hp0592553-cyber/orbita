@@ -23,7 +23,10 @@ DATA     := data
 INCLUDES :=
 
 VERSION := 0.21.44
-APP_VERSION := $(VERSION)
+# A versão histórica ficava igual em todos os ELF, ocultando qual commit
+# realmente estava rodando no Xbox. O SHA vem do checkout do workflow.
+ORBITA_COMMIT := $(shell git -C $(APP_ROOT)/../.. rev-parse --short=7 HEAD 2>/dev/null || echo local)
+APP_VERSION := $(VERSION)-$(ORBITA_COMMIT)
 # v0.15: nome da variante no VERSION (ex.: make VARIANT=full -> 0.15.0-full).
 # Vazio = sufixos automaticos pelos knobs (-gpu/-cpu, -altivec/-c, -st, -trace).
 VARIANT ?=
