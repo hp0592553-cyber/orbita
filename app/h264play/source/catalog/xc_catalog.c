@@ -95,6 +95,7 @@ static int          g_ndone;
 static xcc_status_t g_st;
 /* ---- só o worker ---- */
 static uint64_t     g_sigl_retry_at, g_net_hold_until, g_bg_next;
+static uint64_t     g_rows_save_retry_at, g_idx_save_retry_at;
 static int          g_net_errs;
 /* ---- só o main ---- */
 static lru_t        g_lru_c[LRU_COVERS_MAX], g_lru_h[LRU_HEROES_MAX];
@@ -401,24 +402,62 @@ static void load_cache(void) {
 
 static void save_rows(void) {
     size_t len = 0;
+    unsigned seq;
     xccp_lock();
+    seq = g_rows_seq;
     char *o = g_ntitles > 0 ? rows_serialize(&len) : NULL;
-    g_rows_dirty = 0;
     xccp_unlock();
-    if (!o) return;
-    if (xc_store_save(ROWS_FILE, o, len) != 0) xc_log("[capas] nao gravei %s", ROWS_FILE);
+    if (!o) {
+        xccp_lock();
+        g_rows_dirty = 1;
+        g_rows_save_retry_at = xcn_now_ms() + 5000;
+        xccp_unlock();
+        return;
+    }
+    int rc = xc_store_save(ROWS_FILE, o, len);
     free(o);
+    xccp_lock();
+    if (rc == 0) {
+        if (g_rows_seq == seq) g_rows_dirty = 0;
+        g_rows_save_retry_at = 0;
+    } else {
+        /* Nao perder a sincronizacao: manter pendente e tentar de novo. */
+        g_rows_dirty = 1;
+        g_rows_save_retry_at = xcn_now_ms() + 5000;
+    }
+    xccp_unlock();
+    if (rc != 0) xc_log("[capas] nao gravei %s; nova tentativa em 5 s", ROWS_FILE);
 }
 
 static void save_idx(void) {
     size_t len = 0;
+    int pending;
     xccp_lock();
+    pending = g_idx_dirty;
     char *o = idx_serialize(&len);
-    g_idx_dirty = 0;
     xccp_unlock();
-    if (!o) return;
-    if (xc_store_save(IDX_FILE, o, len) != 0) xc_log("[capas] nao gravei %s", IDX_FILE);
+    if (!o) {
+        xccp_lock();
+        if (!g_idx_dirty) g_idx_dirty = pending ? pending : 1;
+        g_idx_save_retry_at = xcn_now_ms() + 5000;
+        xccp_unlock();
+        return;
+    }
+    int rc = xc_store_save(IDX_FILE, o, len);
     free(o);
+    xccp_lock();
+    if (rc == 0) {
+        /* Limpa somente as mudancas incluidas neste snapshot. */
+        if (g_idx_dirty >= pending) g_idx_dirty -= pending;
+        else g_idx_dirty = 0;
+        g_idx_save_retry_at = 0;
+    } else {
+        /* O contador original continua pendente; nao descartar o indice. */
+        if (!g_idx_dirty) g_idx_dirty = pending ? pending : 1;
+        g_idx_save_retry_at = xcn_now_ms() + 5000;
+    }
+    xccp_unlock();
+    if (rc != 0) xc_log("[capas] nao gravei %s; nova tentativa em 5 s", IDX_FILE);
 }
 
 /* -------------------------------------------------------------- rede */
@@ -553,6 +592,13 @@ static void do_dc_batch(const char *first) {
     free(refs);
 }
 
+/* store-images entrega JPEG baseline. SOI sozinho nao prova que o corpo chegou
+ * inteiro: exigir EOI evita gravar downloads truncados no cache. */
+static int jpeg_complete(const uint8_t *p, size_t n) {
+    return p && n >= 4 && p[0] == 0xFF && p[1] == 0xD8 &&
+           p[n - 2] == 0xFF && p[n - 1] == 0xD9;
+}
+
 /* Lê do pendrive (confere o trailer) ou baixa (e grava). jpg malloc. */
 static int get_jpeg(const char *product, int kind, const char *ipath, int on_disk, uint8_t **jpg, size_t *jlen,
                     int *from_net) {
@@ -565,7 +611,8 @@ static int get_jpeg(const char *product, int kind, const char *ipath, int on_dis
         uint8_t *b = (uint8_t *)malloc(IMG_BODY);
         int l = b ? xc_store_load(fname, b, IMG_BODY) : -1;
         if (l > TRAILER + 4 && !memcmp(b + l - TRAILER, k_magic[kind ? 1 : 0], 4) &&
-            !strncasecmp((char *)b + l - TRAILER + 4, product, TRAILER - 4) && b[0] == 0xFF && b[1] == 0xD8) {
+            !strncasecmp((char *)b + l - TRAILER + 4, product, TRAILER - 4) &&
+            jpeg_complete(b, (size_t)l - TRAILER)) {
             *jpg = b;
             *jlen = (size_t)l - TRAILER;
             return 0;
@@ -585,7 +632,7 @@ static int get_jpeg(const char *product, int kind, const char *ipath, int on_dis
     int rc = do_fetch(IMG_HOST, path, IMG_BODY - TRAILER, &status, &body, &len);
     net_result(rc == 0);
     if (rc != 0) return -1;
-    if (status != 200 || len < 4 || (uint8_t)body[0] != 0xFF || (uint8_t)body[1] != 0xD8) {
+    if (status != 200 || !jpeg_complete((const uint8_t *)body, len)) {
         xccp_lock();
         set_err("imagem HTTP %s%d", "", status);
         xccp_unlock();
@@ -728,7 +775,11 @@ int xcc_worker_step(void) {
     if (!g_inited) return 0;
     uint64_t now = xcn_now_ms();
     if (!g_cache_loaded) { load_cache(); return 1; }
-    if (g_rows_dirty && g_ntitles > 0) { save_rows(); return 1; }
+    int rows_due;
+    xccp_lock();
+    rows_due = g_rows_dirty && g_ntitles > 0 && now >= g_rows_save_retry_at;
+    xccp_unlock();
+    if (rows_due) { save_rows(); return 1; }
     if (!g_rows_net && net_ok(now) && now >= g_sigl_retry_at) { fetch_sigls(now); return 1; }
     job_t j;
     memset(&j, 0, sizeof(j));
@@ -760,7 +811,8 @@ int xcc_worker_step(void) {
             return 1;
         }
     }
-    if (g_idx_dirty >= IDX_SAVE_EVERY || (g_idx_dirty && g_bg_done)) { save_idx(); return 1; }
+    if ((g_idx_dirty >= IDX_SAVE_EVERY || (g_idx_dirty && g_bg_done)) &&
+        now >= g_idx_save_retry_at) { save_idx(); return 1; }
     return 0;
 }
 
@@ -1052,6 +1104,7 @@ void xcc_debug_reset_backoff(void) {
     }
     xccp_unlock();
     g_sigl_retry_at = g_net_hold_until = g_bg_next = 0;
+    g_rows_save_retry_at = g_idx_save_retry_at = 0;
     g_net_errs = 0;
 }
 
