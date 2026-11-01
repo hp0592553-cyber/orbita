@@ -60,6 +60,8 @@ const char *xs_play_locale(void);
 typedef struct {
     char  offering[16];     /* "xgpuweb" ou "xgpuwebf2p" */
     char  host[128];        /* região, ex. "brs.core.gssv-play-prod.xboxlive.com" */
+    char  fallback[XA_REGION_FALLBACKS][128]; /* regiões oferecidas pelo login */
+    unsigned nfallback, next_fallback; /* só antes de iniciar a sessão */
     char *gs_token;         /* Bearer do GSSV (malloc) */
     char *refresh;          /* refresh MSA atual (malloc) — passport e re-login */
     char *passport;         /* cache do token do /connect (malloc) */
