@@ -25,15 +25,8 @@
 #include "stb_image.h"
 #pragma GCC diagnostic pop
 
-int xcc_jpeg_complete(const uint8_t *jpg, size_t len) {
-    /* Validação barata: uma resposta HTTP parcial pode ter cabeçalho válido,
-     * mas faltar o fim. Não salve/mostre esse JPEG como se fosse íntegro. */
-    return jpg && len >= 4 && jpg[0] == 0xff && jpg[1] == 0xd8 &&
-           jpg[len - 2] == 0xff && jpg[len - 1] == 0xd9;
-}
-
 uint32_t *xcc_decode_jpeg(const uint8_t *jpg, size_t len, int w, int h) {
-    if (len > (64u << 20) || !xcc_jpeg_complete(jpg, len) || w <= 0 || h <= 0) return NULL;
+    if (!jpg || len < 4 || len > (64u << 20) || w <= 0 || h <= 0) return NULL;
     int sw = 0, sh = 0, comp = 0;
     unsigned char *rgb = stbi_load_from_memory(jpg, (int)len, &sw, &sh, &comp, 3);
     if (!rgb) return NULL;
