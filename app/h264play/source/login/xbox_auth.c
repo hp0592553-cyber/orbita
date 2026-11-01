@@ -404,6 +404,8 @@ int xa_parse_titles(const char *json, xa_title_t **out, int *n) {
     cJSON *j = cJSON_Parse(json);
     if (!j) return -1;
     const cJSON *res = cJSON_GetObjectItemCaseSensitive(j, "results");
+    /* HTTP 200 com schema novo/erro não significa catálogo vazio válido. */
+    if (!cJSON_IsArray(res)) { cJSON_Delete(j); return -1; }
     int cap = cJSON_GetArraySize(res);
     xa_title_t *t = (xa_title_t *)calloc((size_t)(cap > 0 ? cap : 1), sizeof(xa_title_t));
     if (!t) { cJSON_Delete(j); return -1; }
