@@ -1127,6 +1127,7 @@ void xcc_shutdown(void) {
     g_nwant[0] = g_nwant[1] = 0;
     g_cache_loaded = g_rows_net = g_mru_net = g_rows_dirty = g_idx_dirty = g_bg_done = 0;
     g_sigl_retry_at = g_net_hold_until = g_bg_next = 0;
+    g_rows_save_retry_at = g_idx_save_retry_at = 0;
     g_net_errs = 0;
     g_rows_seq++;
     g_seq++;
