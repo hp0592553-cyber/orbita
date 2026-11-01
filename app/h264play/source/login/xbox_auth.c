@@ -295,12 +295,80 @@ int xa_xsts_authorize(const char *user_token, const char *relying_party, char **
     return XA_OK;
 }
 
+/* A resposta vem de um host Xbox autenticado; mesmo assim, não confiar
+ * cegamente em baseUri. O gsToken nunca pode ir para host fora da Microsoft. */
+static int region_host_from_uri(const char *uri, char *host, size_t cap) {
+    static const char scheme[] = "https://";
+    static const char suffix[] = ".core.gssv-play-prod.xboxlive.com";
+    if (!uri || strncmp(uri, scheme, sizeof(scheme) - 1)) return 0;
+    const char *p = uri + sizeof(scheme) - 1, *end = p;
+    while (*end && *end != '/') end++;
+    size_t n = (size_t)(end - p), tail = sizeof(suffix) - 1;
+    if (n <= tail || n >= cap || strncasecmp(p + n - tail, suffix, tail)) return 0;
+    if (*end && strcmp(end, "/")) return 0;  /* sem path/query/porta */
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)p[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '-' || c == '.')) return 0;
+        if ((c == '.' && (!i || p[i - 1] == '.')) ||
+            (c == '-' && (!i || p[i - 1] == '.'))) return 0;
+    }
+    memcpy(host, p, n);
+    host[n] = 0;
+    return 1;
+}
+
+static int region_select_obj(const cJSON *resp, xa_endpoint_t *ep) {
+    const cJSON *os = cJSON_GetObjectItemCaseSensitive(resp, "offeringSettings");
+    const cJSON *regions = os ? cJSON_GetObjectItemCaseSensitive(os, "regions") : NULL;
+    const cJSON *rg;
+    char h[128];
+    if (!ep || !cJSON_IsArray(regions)) return 0;
+    ep->host[0] = 0;
+    ep->nfallback = 0;
+    /* A primeira default válida vence; se não vier default, primeira válida. */
+    cJSON_ArrayForEach(rg, regions) {
+        if (!jbool(rg, "isDefault") ||
+            !region_host_from_uri(jstr(rg, "baseUri"), h, sizeof(h))) continue;
+        snprintf(ep->host, sizeof(ep->host), "%s", h);
+        break;
+    }
+    if (!ep->host[0]) {
+        cJSON_ArrayForEach(rg, regions) {
+            if (!region_host_from_uri(jstr(rg, "baseUri"), h, sizeof(h))) continue;
+            snprintf(ep->host, sizeof(ep->host), "%s", h);
+            break;
+        }
+    }
+    if (!ep->host[0]) return 0;
+    cJSON_ArrayForEach(rg, regions) {
+        if (ep->nfallback >= XA_REGION_FALLBACKS) break;
+        if (!region_host_from_uri(jstr(rg, "baseUri"), h, sizeof(h)) ||
+            !strcasecmp(h, ep->host)) continue;
+        int dup = 0;
+        for (unsigned i = 0; i < ep->nfallback; i++)
+            if (!strcasecmp(ep->fallback[i], h)) { dup = 1; break; }
+        if (!dup) snprintf(ep->fallback[ep->nfallback++], sizeof(ep->fallback[0]), "%s", h);
+    }
+    return 1 + (int)ep->nfallback;
+}
+
+int xa_region_select(const char *login_json, xa_endpoint_t *ep) {
+    if (!ep) return 0;
+    cJSON *j = cJSON_Parse(login_json ? login_json : "");
+    if (!j) return 0;
+    int n = region_select_obj(j, ep);
+    cJSON_Delete(j);
+    return n;
+}
+
 int xa_streaming_login(const char *offering, const char *gssv_token, xa_endpoint_t *ep, xc_err_t *e) {
     memset(ep, 0, sizeof(*ep));
     char host[96], step[40];
     snprintf(host, sizeof(host), "%s.gssv-play-prod.xboxlive.com", offering);
     snprintf(step, sizeof(step), "login %s", offering);
     cJSON *req = cJSON_CreateObject();
+    if (!req) { set_err(e, HTTPS_ETOOBIG, "sem memoria"); return XA_ERR; }
     cJSON_AddStringToObject(req, "token", gssv_token);
     cJSON_AddStringToObject(req, "offeringId", offering);
     cJSON *resp = NULL;
@@ -308,27 +376,18 @@ int xa_streaming_login(const char *offering, const char *gssv_token, xa_endpoint
     cJSON_Delete(req);
     if (rc != XA_OK) return XA_ERR;
     const char *tok = jstr(resp, "gsToken");
-    const cJSON *os = cJSON_GetObjectItemCaseSensitive(resp, "offeringSettings");
-    const cJSON *regions = os ? cJSON_GetObjectItemCaseSensitive(os, "regions") : NULL;
-    const cJSON *rg;
-    const char *base = NULL;
-    cJSON_ArrayForEach(rg, regions) {
-        if (jbool(rg, "isDefault")) { base = jstr(rg, "baseUri"); break; }
-    }
-    if (!tok || !base) {
+    int candidates = region_select_obj(resp, ep);
+    if (!tok || !candidates) {
         cJSON_Delete(resp);
-        set_err(e, HTTPS_EPROTO, "%s sem gsToken/regiao", step);
+        set_err(e, HTTPS_EPROTO, "%s sem gsToken ou regiao HTTPS valida", step);
         return XA_ERR;
     }
-    /* baseUri = "https://brs.core.gssv-play-prod.xboxlive.com" */
-    const char *h = strstr(base, "://");
-    h = h ? h + 3 : base;
-    snprintf(ep->host, sizeof(ep->host), "%s", h);
-    char *slash = strchr(ep->host, '/');
-    if (slash) *slash = 0;
     ep->token = xstrdup(tok);
     cJSON_Delete(resp);
-    return ep->token ? XA_OK : XA_ERR;
+    if (!ep->token) { set_err(e, HTTPS_ETOOBIG, "sem memoria"); return XA_ERR; }
+    xc_log("[server] %s: regiao %s; %d alternativa(s) anunciada(s)", offering, ep->host,
+           (int)ep->nfallback);
+    return XA_OK;
 }
 
 /* -------------------------------------------------------------- catálogo */
@@ -441,28 +500,73 @@ int xa_finalize(xa_title_t *t, int n) {
     return k;
 }
 
-/* GET autenticado no host da região que devolve {"results":[título...]}. */
+/* A região padrão é a recomendação da Microsoft. Se o TCP/DNS ou o
+ * serviço falhar temporariamente, tentar outras regiões daquela mesma
+ * resposta de login. Nunca repetir 401/403 nem falha de certificado. */
 static int fetch_title_list(const xa_endpoint_t *ep, const char *step, const char *path,
-                            size_t max_body, xa_title_t **out, int *n, xc_err_t *e) {
+                            size_t max_body, xa_title_t **out, int *n, xc_err_t *e,
+                            char *selected, size_t sel_cap) {
+    *out = NULL;
+    *n = 0;
+    if (!ep || !ep->host[0] || !ep->token) {
+        set_err(e, HTTPS_EHTTP, "sem servidor/credencial xCloud");
+        return XA_ERR;
+    }
     size_t hl = strlen(ep->token) + sizeof(DEVICE_INFO) + 256;
     char *hdr = (char *)malloc(hl);
     if (!hdr) { set_err(e, HTTPS_ETOOBIG, "sem memoria"); return XA_ERR; }
     snprintf(hdr, hl, "Accept: application/json\r\nContent-Type: application/json\r\n"
              "X-Gssv-Client: XboxComBrowser\r\n" DEVICE_INFO "Authorization: Bearer %s\r\n", ep->token);
-    https_resp_t r;
-    int rc = https_request(step, "GET", ep->host, path, hdr, NULL, 0, max_body, &r, e);
+    for (unsigned attempt = 0; attempt <= ep->nfallback && attempt <= XA_REGION_FALLBACKS; attempt++) {
+        const char *host = attempt ? ep->fallback[attempt - 1] : ep->host;
+        https_resp_t r;
+        memset(&r, 0, sizeof(r));
+        int rc = https_request(step, "GET", host, path, hdr, NULL, 0, max_body, &r, e);
+        if (rc != 0) {
+            xc_log("[server] %s em %s falhou: %s", step, host, e->msg);
+            /* Erros de TLS com certificado inválido NÃO autorizam fallback. */
+            if (e->code != HTTPS_EDNS && e->code != HTTPS_ETCP &&
+                e->code != HTTPS_ETIMEOUT && e->code != HTTPS_ETLS) break;
+            continue;
+        }
+        if (r.status < 200 || r.status > 299) {
+            int status = r.status;
+            http_fail(e, step, &r);
+            https_free(&r);
+            xc_log("[server] %s em %s: HTTP %d", step, host, status);
+            if (status != 408 && status != 429 && status < 500) break;
+            continue;
+        }
+        rc = xa_parse_titles(r.body, out, n);
+        xc_log("[server] %s em %s: HTTP %d, %u bytes, %d titulos", step, host,
+               r.status, (unsigned)r.len, rc == 0 ? *n : -1);
+        https_free(&r);
+        if (rc != 0) {
+            set_err(e, HTTPS_EPROTO, "JSON invalido em %s (%s)", step, host);
+            break;
+        }
+        if (*n == 0 && attempt < ep->nfallback) {
+            xc_log("[server] %s em %s: lista vazia, conferindo proxima regiao", step, host);
+            free(*out); *out = NULL;
+            continue;
+        }
+        if (selected && sel_cap) snprintf(selected, sel_cap, "%s", host);
+        xa_secret_free(&hdr);
+        return XA_OK;
+    }
     xa_secret_free(&hdr);
-    if (rc != 0) return XA_ERR;
-    if (r.status < 200 || r.status > 299) { http_fail(e, step, &r); https_free(&r); return XA_ERR; }
-    rc = xa_parse_titles(r.body, out, n);
-    xc_log("[cat] %s %u bytes, %d titulos", path, (unsigned)r.len, rc == 0 ? *n : -1);
-    https_free(&r);
-    if (rc != 0) { set_err(e, HTTPS_EPROTO, "JSON invalido em %s", step); return XA_ERR; }
-    return XA_OK;
+    return XA_ERR;
 }
 
-int xa_fetch_titles(const xa_endpoint_t *ep, xa_title_t **out, int *n, xc_err_t *e) {
-    return fetch_title_list(ep, "titles", "/v2/titles", TITLES_BODY, out, n, e);
+int xa_fetch_titles(xa_endpoint_t *ep, xa_title_t **out, int *n, xc_err_t *e) {
+    char chosen[128] = "";
+    int rc = fetch_title_list(ep, "titles", "/v2/titles", TITLES_BODY, out, n, e,
+                              chosen, sizeof(chosen));
+    if (rc == XA_OK && chosen[0] && strcmp(ep->host, chosen)) {
+        xc_log("[server] catalogo mudou da regiao %s para %s", ep->host, chosen);
+        snprintf(ep->host, sizeof(ep->host), "%s", chosen);
+    }
+    return rc;
 }
 
 int xa_fetch_mru(const xa_endpoint_t *ep, int max, xa_title_t **out, int *n, xc_err_t *e) {
@@ -470,7 +574,7 @@ int xa_fetch_mru(const xa_endpoint_t *ep, int max, xa_title_t **out, int *n, xc_
     if (max < 1) max = 1;
     if (max > 100) max = 100;
     snprintf(path, sizeof(path), "/v2/titles/mru?mr=%d", max);
-    return fetch_title_list(ep, "mru", path, SMALL_BODY * 4, out, n, e);
+    return fetch_title_list(ep, "mru", path, SMALL_BODY * 4, out, n, e, NULL, 0);
 }
 
 int xa_parse_names(const char *json, xa_title_t *t, int n) {
