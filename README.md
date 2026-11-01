@@ -1,9 +1,9 @@
 # orbita
 
-> **Legacy (final).** This repository is the final version of the legacy ELF
-> client (last release: 0.21.44, October 2026). It is no longer being worked on.
-> Development continues on the XEX version, which is not in this repository.
-> The site keeps the last ELF versions available for beta testers:
+> **ELF maintenance line.** This repository contains the native Xbox 360 ELF
+> client. This branch keeps the ELF build and its host-side regression tests;
+> newer XEX development is tracked separately.
+> Download and beta information:
 > <https://x360.pistatrack.com>
 
 Native Xbox Cloud Gaming (xCloud) client for the **Xbox 360 (RGH/JTAG)**.
@@ -15,14 +15,14 @@ decode and controller input — with no PC in the middle.
 > Game Pass are trademarks of Microsoft. You need your own account and an
 > active subscription that includes cloud gaming.
 
-**Status:** legacy, final (0.21.44). Development moved to the XEX version.
+**Status:** ELF maintenance (base version 0.21.44); cache/network reliability fixes are maintained here.
 Site, downloads and feature status: <https://x360.pistatrack.com>
 
 ## Requirements
 
 - Xbox 360 with RGH/JTAG
 - XeLL Reloaded v0.993 or newer, launched from Aurora via the *XeLL Launcher* app
-- Wired network (Wi-Fi is not supported)
+- Wired network, or built-in Wi-Fi on compatible Xbox 360 S/E models with the internal Marvell adapter (see `app/h264play/WIFI.md`)
 - Up to 4 Xbox 360 controllers (Xbox Series controllers are in testing)
 
 ## What works
@@ -35,6 +35,8 @@ Site, downloads and feature status: <https://x360.pistatrack.com>
 
 See the live [status page](https://x360.pistatrack.com/status) for details.
 
+For the USB cache format and the PC-side index checker/repair tool, see [`tools/orbita-sync/README.md`](tools/orbita-sync/README.md). The tool reconciles existing cover/hero files; missing network metadata still requires a normal online catalog sync.
+
 ## Repository layout
 
 | Path | What |
@@ -43,7 +45,7 @@ See the live [status page](https://x360.pistatrack.com/status) for details.
 | `app/h264play/hosttest/` | Host-side unit/E2E tests (run on Linux) |
 | `deps/` | Build scripts for Xenon ports of mbedTLS, libopus, libpeer/usrsctp/libsrtp |
 | `web/` | Beta site and admin panel (Flask + Postgres) |
-| `tools/` | Release signing/publishing, capture and analysis tools |
+| `tools/` | Release signing/publishing, capture, analysis and offline XC360 cache synchronization tools |
 | `brand/` | orbita logo and palette |
 | `docs/` | ADRs, protocols, test results |
 

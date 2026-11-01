@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 void xccp_test_set_busy(int b);
+void xc_store_test_fail_save(const char *name, int count);
 
 static int g_fail = 0, g_n = 0;
 #define CHECK(c) do { g_n++; if (!(c)) { g_fail++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -52,8 +53,25 @@ static int file_exists(const char *store, const char *name) {
     return stat(p, &st) == 0 && st.st_size > 0;
 }
 
+static int file_contains(const char *store, const char *name, const char *needle) {
+    char p[1024], *buf;
+    struct stat st;
+    snprintf(p, sizeof(p), "%s/%s", store, name);
+    if (stat(p, &st) != 0 || st.st_size <= 0 || st.st_size > (1 << 20)) return 0;
+    FILE *f = fopen(p, "rb");
+    if (!f) return 0;
+    buf = (char *)malloc((size_t)st.st_size + 1);
+    if (!buf) { fclose(f); return 0; }
+    size_t n = fread(buf, 1, (size_t)st.st_size, f);
+    fclose(f);
+    buf[n] = 0;
+    int ok = strstr(buf, needle) != NULL;
+    free(buf);
+    return ok;
+}
+
 /* --------------------------------------------------------- fetch falso */
-static int g_fail_all = 0, g_img_status = 0, g_slow = 0;
+static int g_fail_all = 0, g_img_status = 0, g_slow = 0, g_img_truncate_tail = 0;
 static int g_calls_sigl, g_calls_dc, g_calls_img;
 static char g_log[512][64];
 static int g_nlog;
@@ -101,6 +119,8 @@ static int fake_fetch(const char *host, const char *path, size_t max, int *statu
             snprintf(rel, sizeof(rel), "%s/%s.jpg", hero ? "hero" : "covers", g_refs[i].product);
             *body = slurp(rel, len);
             if (!*body) { *status = 404; *body = strdup("x"); *len = 1; }
+            else if (g_img_truncate_tail > 0 && *len > (size_t)g_img_truncate_tail)
+                *len -= (size_t)g_img_truncate_tail;  /* simula resposta cortada */
             return 0;
         }
         *status = 404;
@@ -517,6 +537,60 @@ static void test_failures(void) {
     xcc_shutdown();
 }
 
+static void test_sync_save_retry(void) {
+    /* ROWS.TXT: uma falha de USB nao pode limpar a flag dirty. */
+    set_store("sync-rows");
+    init_fake(4);
+    xcc_hook_start();
+    xa_title_t one = g_cat[0];
+    snprintf(one.name, sizeof(one.name), "%s", "SYNC ROWS RETRY");
+    xc_store_test_fail_save("ROWS.TXT", 1);
+    xcc_hook_titles(&one, 1);  /* primeira gravação falha */
+    CHECK(!file_exists(store(), "ROWS.TXT"));
+    xcc_worker_finish();       /* tenta novamente no encerramento do worker */
+    CHECK(file_contains(store(), "ROWS.TXT", "SYNC ROWS RETRY"));
+    xcc_shutdown();
+
+    /* IMGIDX.TXT: o contador pendente tambem sobrevive a uma falha. */
+    set_store("sync-index");
+    init_fake(4);
+    xcc_hook_start();
+    one = g_cat[0];
+    xcc_hook_titles(&one, 1);
+    const char *want[1] = { one.product };
+    xcc_want(XCC_COVER, want, 1);
+    xc_store_test_fail_save("IMGIDX.TXT", 1);
+    for (int i = 0; i < 80; i++) { run_steps(20); xcc_poll(); }
+    CHECK(!file_exists(store(), "IMGIDX.TXT"));
+    xcc_worker_finish();
+    CHECK(file_contains(store(), "IMGIDX.TXT", "XCCIMG 1"));
+    xcc_shutdown();
+    xc_store_test_fail_save(NULL, 0);
+}
+
+static void test_truncated_image(void) {
+    set_store("sync-truncated");
+    init_fake(4);
+    xcc_hook_start();
+    xa_title_t one = g_cat[0];
+    xcc_hook_titles(&one, 1);
+    const char *want[1] = { one.product };
+    xcc_want(XCC_COVER, want, 1);
+    g_img_truncate_tail = 2;  /* remove os bytes FF D9 do JPEG */
+    for (int i = 0; i < 60; i++) { run_steps(20); xcc_poll(); }
+    char fn[32];
+    xcc_file_name(fn, sizeof(fn), one.product, XCC_COVER);
+    CHECK(xcc_cover_get(one.product) == NULL);
+    CHECK(!file_exists(store(), fn)); /* nunca grava JPEG incompleto */
+    g_img_truncate_tail = 0;
+    xcc_debug_reset_backoff();
+    for (int i = 0; i < 60; i++) { run_steps(20); xcc_poll(); }
+    CHECK(xcc_cover_get(one.product) != NULL);
+    CHECK(file_exists(store(), fn));
+    xcc_worker_finish();
+    xcc_shutdown();
+}
+
 static void test_thread(void) {
     set_store("flow");
     init_fake(8);
@@ -574,6 +648,8 @@ int main(int argc, char **argv) {
     test_flow();
     test_cache_offline();
     test_failures();
+    test_sync_save_retry();
+    test_truncated_image();
     test_thread();
     free(g_refs);
     free(g_cat);
