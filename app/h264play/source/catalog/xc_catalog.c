@@ -706,6 +706,15 @@ static int pick_background(job_t *j, uint64_t now) {
     return 0;
 }
 
+/* Medida simples das diferenças de cor entre pixels próximos. Se uma capa
+ * está sendo decodificada em faixas, diferenças horizontais tendem a ~zero
+ * enquanto as verticais permanecem altas. Só diagnóstico, não filtro. */
+static unsigned pix_delta(uint32_t a, uint32_t b) {
+    return (unsigned)(abs((int)((a >> 8) & 255) - (int)((b >> 8) & 255)) +
+                      abs((int)((a >> 16) & 255) - (int)((b >> 16) & 255)) +
+                      abs((int)(a >> 24) - (int)(b >> 24)));
+}
+
 static void do_image(const job_t *j) {
     uint8_t *jpg = NULL;
     size_t jl = 0;
@@ -715,6 +724,44 @@ static void do_image(const job_t *j) {
     uint32_t *px = NULL;
     int w = j->kind == XCC_HERO ? XCC_HERO_W : XCC_COVER_W, h = j->kind == XCC_HERO ? XCC_HERO_H : XCC_COVER_H;
     if (rc == 0 && j->decode) px = xcc_decode_jpeg(jpg, jl, w, h);
+    /* Uma amostra de uma capa por inicialização, gravada SOMENTE pela hw3
+     * (USB/FatFs): permite comparar bytes do JPEG com pixels da GPU,
+     * separando download/cache vs. stb_image/Xenos. Sem dados de conta. */
+    static int diag_cover_done;
+    if (!diag_cover_done && j->decode && j->kind == XCC_COVER && jpg && jl) {
+        diag_cover_done = 1;
+        unsigned hd = 0, vd = 0, samples = 0;
+        if (px) {
+            for (int y = 12; y + 12 < h; y += 25)
+                for (int x = 12; x + 12 < w; x += 25) {
+                    unsigned k = (unsigned)y * (unsigned)w + (unsigned)x;
+                    hd += pix_delta(px[k], px[k + 8]);
+                    vd += pix_delta(px[k], px[k + 8 * w]);
+                    samples++;
+                }
+        }
+        char detail[550];
+        int len = snprintf(detail, sizeof(detail),
+            "Orbita COVERDIAG 1 (somente dados de imagem)\n"
+            "produto=%s\norigem=%s\njpeg_bytes=%u\njpeg_crc32=%08x\n"
+            "decodificou=%s\ndimensoes=%dx%d\n"
+            "pixels_12_12=%08x\npixels_88_130=%08x\npixels_160_250=%08x\n"
+            "delta_horizontal_medio=%u\ndelta_vertical_medio=%u\n"
+            "Para verificar a origem envie tambem XC360/COVERS/%s.JPG\n",
+            j->product, from_net ? "servidor" : j->on_disk ? "cache_usb" : "servidor",
+            (unsigned)jl, jpg_crc32(jpg, jl), px ? "sim" : "nao", w, h,
+            px ? px[12*w + 12] : 0u, px ? px[130*w + 88] : 0u,
+            px ? px[250*w + 160] : 0u,
+            samples ? hd / samples : 0u, samples ? vd / samples : 0u,
+            j->product);
+        if (len > 0 && len < (int)sizeof(detail)) {
+            if (xc_store_save("COVERDIAG.TXT", detail, (size_t)len) != 0)
+                xc_log("[capas] falhou ao gravar COVERDIAG.TXT (pendrive)");
+            else
+                xc_log("[capas] COVERDIAG.TXT gravado: %s JPEG %u bytes, decode %s",
+                       j->product, (unsigned)jl, px ? "ok" : "falhou");
+        }
+    }
     free(jpg);
     uint64_t now = xcn_now_ms();
     xccp_lock();
