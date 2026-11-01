@@ -695,6 +695,10 @@ static int pick_background(job_t *j, uint64_t now) {
             }
             /* Primeiro poster/box art; depois SuperHeroArt/TitledHeroArt. */
             for (int kind = XCC_COVER; kind <= XCC_HERO; kind++) {
+                /* ALL pode ter milhares de jogos: poster continua completo,
+                 * Hero é pré-cacheado nas três fileiras editoriais; em ALL,
+                 * o Hero do jogo focado entra pela fila prioritária (want). */
+                if (kind == XCC_HERO && r == XCC_ROW_ALL) continue;
                 unsigned bit = 1u << kind;
                 if (!e->path[kind][0] || (e->disk & bit) || (e->busy & bit)) continue;
                 if (e->fails[kind] >= FAILS_MAX || now < e->retry_at[kind]) continue;
