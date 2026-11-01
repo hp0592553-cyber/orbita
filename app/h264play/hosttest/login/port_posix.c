@@ -85,7 +85,21 @@ int xc_store_load(const char *name, void *buf, size_t cap) {
     return (int)n;
 }
 
+/* Falha injetavel, usada somente pelos testes host do catalogo. */
+static char g_test_fail_save_name[64];
+static int g_test_fail_save_count;
+
+void xc_store_test_fail_save(const char *name, int count) {
+    snprintf(g_test_fail_save_name, sizeof(g_test_fail_save_name), "%s", name ? name : "");
+    g_test_fail_save_count = count > 0 ? count : 0;
+}
+
 int xc_store_save(const char *name, const void *buf, size_t n) {
+    if (g_test_fail_save_count > 0 &&
+        (!g_test_fail_save_name[0] || !strcmp(g_test_fail_save_name, name))) {
+        g_test_fail_save_count--;
+        return -1;
+    }
     char p[512];
     mkdir(store_dir(), 0700);
     snprintf(p, sizeof(p), "%s/%s", store_dir(), name);
