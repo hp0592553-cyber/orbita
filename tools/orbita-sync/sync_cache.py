@@ -231,8 +231,11 @@ def audit(root: Path, repair: bool = False) -> int:
                      "não consegui ler ROWS" in item for item in row_errors)
     valid_files, file_warnings, total_files = discover_images(root)
 
-    by_product = {entry.product: entry for entry in entries}
+    indexed_before = {entry.product for entry in entries}
     before = len(entries)
+    missing_products = len(set(products) - indexed_before)
+    orphan_products = len(set(valid_files) - indexed_before - set(products))
+    by_product = {entry.product: entry for entry in entries}
     for product in products:
         by_product.setdefault(product, Entry(product))
     for product, mask in valid_files.items():
@@ -251,17 +254,14 @@ def audit(root: Path, repair: bool = False) -> int:
                 missing_flags += 1
             entry.disk = actual
 
-    missing_products = sum(1 for product in products if product not in
-                           {item.product for item in parse_index(root)[0]})
-    orphan_files = max(0, len(valid_files) - len(parse_index(root)[0]))
-    issues = len(row_errors) + len(idx_errors) + len(file_warnings) + stale_flags + missing_products
+    issues = len(row_errors) + len(idx_errors) + len(file_warnings) + stale_flags + missing_products + orphan_products
 
     print(f"XC360: {root}")
     print(f"ROWS.TXT: {len(products)} bigIds únicos; {len(row_errors)} problema(s).")
     print(f"IMGIDX.TXT: {before} entrada(s) antes; {len(entries)} após reconciliar.")
     print(f"Imagens: {good_images} válidas; {total_files} arquivo(s) visto(s).")
     print(f"Índice: {stale_flags} flag(s) disk divergente(s), {missing_products} produto(s) sem entrada, "
-          f"{orphan_files} produto(s) recuperado(s) por trailer.")
+          f"{orphan_products} produto(s) recuperado(s) por trailer.")
     for message in row_errors + idx_errors + file_warnings:
         print(f"AVISO: {message}")
 
