@@ -288,12 +288,19 @@ def self_test() -> int:
         (root / "COVERS").mkdir()
         (root / "HERO").mkdir()
         product = "9NBLGGH4R315"
+        missing = "9NBLGGH4R3AB"
+        orphan = "9NBLGGH4R3AC"
         (root / "ROWS.TXT").write_text(
-            f"{ROWS_MAGIC}\n#ROW 3\nT123\t{product}\t1\tJogo teste\n",
+            f"{ROWS_MAGIC}\n#ROW 3\nT123\t{product}\t1\tJogo teste\n"
+            f"T124\t{missing}\t1\tJogo sem capa ainda\n",
             encoding="utf-8")
         jpg = b"\xff\xd8" + b"orbita-test-image" + b"\xff\xd9"
         trailer = b"XCC1" + product.encode("ascii") + bytes(28 - len(product))
         (root / "COVERS" / fnv1a_product(product)).write_bytes(jpg + trailer)
+        # Esta arte ficou sem entrada no índice e nem aparece em ROWS.TXT.
+        orphan_trailer = b"XCC1" + orphan.encode("ascii") + bytes(28 - len(orphan))
+        orphan_file = root / "COVERS" / fnv1a_product(orphan)
+        orphan_file.write_bytes(jpg + orphan_trailer)
         # Disk bit deliberately incorrect and one game missing from IMGIDX.
         (root / "IMGIDX.TXT").write_text(
             f"{IDX_MAGIC}\n{product}\t1\t0\t/image/cover\t\n",
@@ -305,11 +312,16 @@ def self_test() -> int:
             print("SELF-TEST FAIL: a reconstrução falhou.", file=sys.stderr)
             return 1
         lines = read_text(root / "IMGIDX.TXT")
-        if lines[0] != IDX_MAGIC or f"{product}\t1\t1\t/image/cover\t" not in lines:
-            print("SELF-TEST FAIL: flags reconstruídas incorretamente.", file=sys.stderr)
+        expected = {
+            f"{product}\t1\t1\t/image/cover\t",
+            f"{missing}\t0\t0\t\t",
+            f"{orphan}\t0\t1\t\t",
+        }
+        if lines[0] != IDX_MAGIC or not expected.issubset(set(lines)):
+            print("SELF-TEST FAIL: flags/entradas reconstruídas incorretamente.", file=sys.stderr)
             return 1
-        if not (root / "IMGIDX.BAK").is_file():
-            print("SELF-TEST FAIL: backup do índice não foi criado.", file=sys.stderr)
+        if not (root / "IMGIDX.BAK").is_file() or not orphan_file.is_file():
+            print("SELF-TEST FAIL: backup ou arte original não foi preservada.", file=sys.stderr)
             return 1
     print("SELF-TEST PASS")
     return 0
