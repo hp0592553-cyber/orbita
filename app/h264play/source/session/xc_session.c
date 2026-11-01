@@ -190,6 +190,9 @@ int xs_creds_login(xs_creds_t *c, xc_err_t *e) {
     c->gs_token = ep.token;          /* passa a ser nosso */
     ep.token = NULL;
     snprintf(c->host, sizeof(c->host), "%s", ep.host);
+    c->nfallback = ep.nfallback;
+    c->next_fallback = 0;
+    memcpy(c->fallback, ep.fallback, sizeof(c->fallback));
     xa_secret_free(&c->passport);    /* vinha do refresh anterior */
     xc_log("[sess] credenciais %s ok, regiao %s", c->offering, c->host);
     return XS_OK;
@@ -249,12 +252,35 @@ static int gssv_req(xs_creds_t *c, const char *step, const char *method, const c
         if (!hdr) { set_err(e, HTTPS_ETOOBIG, "sem memoria"); return XS_ERR; }
         /* v0.19.2: keep-alive com o host da região (um handshake por sessão
          * em vez de um por pedido). Região nova (re-login) = conexão nova. */
-        if (c->conn && strcmp(https_conn_host(c->conn), c->host) != 0) { https_conn_free(c->conn); c->conn = NULL; }
-        if (!c->conn) c->conn = https_conn_new(c->host);
-        int rc = c->conn ? https_conn_request(c->conn, step, method, path, hdr, body, body ? strlen(body) : 0,
-                                              SMALL_BODY, r, e)
-                         : https_request(step, method, c->host, path, hdr, body, body ? strlen(body) : 0,
-                                         SMALL_BODY, r, e);
+        int rc;
+        /* Fallback de região apenas para o GET inicial de sessões ativas.
+         * Nunca mova uma sessão já criada para outro datacenter. */
+        int early = !strcmp(method, "GET") &&
+                    !strcmp(path, "/v5/sessions/cloud/active");
+        for (;;) {
+            if (c->conn && strcmp(https_conn_host(c->conn), c->host) != 0) {
+                https_conn_free(c->conn); c->conn = NULL;
+            }
+            if (!c->conn) c->conn = https_conn_new(c->host);
+            rc = c->conn ? https_conn_request(c->conn, step, method, path, hdr,
+                                              body, body ? strlen(body) : 0, SMALL_BODY, r, e)
+                         : https_request(step, method, c->host, path, hdr,
+                                         body, body ? strlen(body) : 0, SMALL_BODY, r, e);
+            int transient = (rc != 0 &&
+                             (e->code == HTTPS_EDNS || e->code == HTTPS_ETCP ||
+                              e->code == HTTPS_ETIMEOUT || e->code == HTTPS_ETLS)) ||
+                            (rc == 0 && (r->status == 502 || r->status == 503 || r->status == 504));
+            if (!early || !transient || c->next_fallback >= c->nfallback) break;
+            char next[128];
+            snprintf(next, sizeof(next), "%s", c->fallback[c->next_fallback++]);
+            if (!next[0] || !strcmp(next, c->host)) continue;
+            xc_log("[server] sessao: regiao %s indisponivel (%s), tentando %s",
+                   c->host, rc == 0 ? "HTTP 5xx" : e->msg, next);
+            https_free(r);
+            memset(r, 0, sizeof(*r));
+            if (c->conn) { https_conn_free(c->conn); c->conn = NULL; }
+            snprintf(c->host, sizeof(c->host), "%s", next);
+        }
         xa_secret_free(&hdr);
         if (rc != 0) return map_transport(rc);
         if (r->status != 401) return XS_OK;
