@@ -32,31 +32,10 @@
 #define WANT_MAX   64
 #define DONE_MAX   6
 #define DC_BATCH   20
-#define TRAILER    32            /* magia (4) + bigId (24) + CRC32 (4) no fim */
-/* Rev 2026-10: nova versao de cache. Rejeita as imagens antigas sem checksum
- * (podiam carregar com faixas apos escrita parcial no pendrive). Os ultimos
- * quatro bytes do trailer guardam CRC32 do JPEG, separado da assinatura. */
-static const char k_magic[2][5] = { "XCC2", "XCH3" };
+#define TRAILER    32            /* magia (4) + bigId (28) no fim do .JPG */
+/* Magia por tipo; XCH2 identifica o Hero 1280x720. */
+static const char k_magic[2][5] = { "XCC1", "XCH2" };
 
-static uint32_t jpg_crc32(const uint8_t *p, size_t n) {
-    uint32_t c = 0xffffffffu;
-    for (size_t i = 0; i < n; i++) {
-        c ^= p[i];
-        for (int k = 0; k < 8; k++)
-            c = (c >> 1) ^ ((c & 1u) ? 0xedb88320u : 0u);
-    }
-    return ~c;
-}
-static uint32_t jpg_crc_read(const uint8_t *p) {
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
-           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
-}
-static void jpg_crc_write(uint8_t *p, uint32_t c) {
-    p[0] = (uint8_t)(c >> 24);
-    p[1] = (uint8_t)(c >> 16);
-    p[2] = (uint8_t)(c >> 8);
-    p[3] = (uint8_t)c;
-}
 #define IMG_BODY   (768 * 1024)   /* v0.20.0: hero 1280x720 q70 ~100-300 KB */
 #define DC_BODY    (8 << 20)
 #define SIGL_BODY  (2 << 20)
@@ -586,15 +565,12 @@ static int get_jpeg(const char *product, int kind, const char *ipath, int on_dis
         uint8_t *b = (uint8_t *)malloc(IMG_BODY);
         int l = b ? xc_store_load(fname, b, IMG_BODY) : -1;
         if (l > TRAILER + 4 && !memcmp(b + l - TRAILER, k_magic[kind ? 1 : 0], 4) &&
-            !strncasecmp((char *)b + l - TRAILER + 4, product, 24) &&
-            xcc_jpeg_complete(b, (size_t)l - TRAILER) &&
-            jpg_crc_read(b + l - 4) == jpg_crc32(b, (size_t)l - TRAILER)) {
+            !strncasecmp((char *)b + l - TRAILER + 4, product, TRAILER - 4) && b[0] == 0xFF && b[1] == 0xD8) {
             *jpg = b;
             *jlen = (size_t)l - TRAILER;
             return 0;
         }
         free(b);
-        xc_log("[capas] cache antigo ou com JPEG corrompido: %s tipo %d; baixando novamente", product, kind);
         xccp_lock();
         ent_t *e = ent_find(product);
         if (e) e->disk &= (uint8_t)~(1u << kind);
@@ -609,13 +585,10 @@ static int get_jpeg(const char *product, int kind, const char *ipath, int on_dis
     int rc = do_fetch(IMG_HOST, path, IMG_BODY - TRAILER, &status, &body, &len);
     net_result(rc == 0);
     if (rc != 0) return -1;
-    if (status != 200 || !xcc_jpeg_complete((const uint8_t *)body, len)) {
+    if (status != 200 || len < 4 || (uint8_t)body[0] != 0xFF || (uint8_t)body[1] != 0xD8) {
         xccp_lock();
-        if (status == 200) set_err("imagem JPEG incompleto (%s%d)", "", (int)len);
-        else set_err("imagem HTTP %s%d", "", status);
+        set_err("imagem HTTP %s%d", "", status);
         xccp_unlock();
-        xc_log("[capas] imagem rejeitada (%s, tipo %d): HTTP %d, %u bytes; JPEG incompleto ou inválido",
-               product, kind, status, (unsigned)len);
         free(body);
         return -1;
     }
@@ -623,10 +596,7 @@ static int get_jpeg(const char *product, int kind, const char *ipath, int on_dis
     if (!b) { free(body); return -1; }
     memset(b + len, 0, TRAILER);
     memcpy(b + len, k_magic[kind ? 1 : 0], 4);
-    size_t prodlen = strlen(product);
-    if (prodlen > 24) prodlen = 24;
-    memcpy(b + len + 4, product, prodlen);
-    jpg_crc_write(b + len + TRAILER - 4, jpg_crc32(b, len));
+    memcpy(b + len + 4, product, strlen(product) < TRAILER - 4 ? strlen(product) : TRAILER - 4);
     *from_net = 1;
     int saved = xc_store_save(fname, b, len + TRAILER) == 0;
     xccp_lock();
@@ -693,24 +663,16 @@ static int pick_background(job_t *j, uint64_t now) {
                 snprintf(j->product, sizeof(j->product), "%s", e->product);
                 return 1;
             }
-            /* Primeiro poster/box art; depois SuperHeroArt/TitledHeroArt. */
-            for (int kind = XCC_COVER; kind <= XCC_HERO; kind++) {
-                /* ALL pode ter milhares de jogos: poster continua completo,
-                 * Hero é pré-cacheado nas três fileiras editoriais; em ALL,
-                 * o Hero do jogo focado entra pela fila prioritária (want). */
-                if (kind == XCC_HERO && r == XCC_ROW_ALL) continue;
-                unsigned bit = 1u << kind;
-                if (!e->path[kind][0] || (e->disk & bit) || (e->busy & bit)) continue;
-                if (e->fails[kind] >= FAILS_MAX || now < e->retry_at[kind]) continue;
-                j->type = 2;
-                j->kind = kind;
-                j->decode = 0;       /* arte de fundo fica no USB até receber foco */
-                j->on_disk = 0;
-                snprintf(j->product, sizeof(j->product), "%s", e->product);
-                snprintf(j->path, sizeof(j->path), "%s", e->path[kind]);
-                e->busy |= (uint8_t)bit;
-                return 1;
-            }
+            if (!e->path[XCC_COVER][0] || (e->disk & 1) || (e->busy & 1)) continue;
+            if (e->fails[XCC_COVER] >= FAILS_MAX || now < e->retry_at[XCC_COVER]) continue;
+            j->type = 2;
+            j->kind = XCC_COVER;
+            j->decode = 0;
+            j->on_disk = 0;
+            snprintf(j->product, sizeof(j->product), "%s", e->product);
+            snprintf(j->path, sizeof(j->path), "%s", e->path[XCC_COVER]);
+            e->busy |= 1;
+            return 1;
         }
     }
     return 0;
@@ -719,11 +681,7 @@ static int pick_background(job_t *j, uint64_t now) {
 /* Medida simples das diferenças de cor entre pixels próximos. Se uma capa
  * está sendo decodificada em faixas, diferenças horizontais tendem a ~zero
  * enquanto as verticais permanecem altas. Só diagnóstico, não filtro. */
-static unsigned pix_delta(uint32_t a, uint32_t b) {
-    return (unsigned)(abs((int)((a >> 8) & 255) - (int)((b >> 8) & 255)) +
-                      abs((int)((a >> 16) & 255) - (int)((b >> 16) & 255)) +
-                      abs((int)(a >> 24) - (int)(b >> 24)));
-}
+
 
 static void do_image(const job_t *j) {
     uint8_t *jpg = NULL;
@@ -734,61 +692,12 @@ static void do_image(const job_t *j) {
     uint32_t *px = NULL;
     int w = j->kind == XCC_HERO ? XCC_HERO_W : XCC_COVER_W, h = j->kind == XCC_HERO ? XCC_HERO_H : XCC_COVER_H;
     if (rc == 0 && j->decode) px = xcc_decode_jpeg(jpg, jl, w, h);
-    /* Uma amostra de uma capa por inicialização, gravada SOMENTE pela hw3
-     * (USB/FatFs): permite comparar bytes do JPEG com pixels da GPU,
-     * separando download/cache vs. stb_image/Xenos. Sem dados de conta. */
-    static int diag_cover_done;
-    if (!diag_cover_done && j->decode && j->kind == XCC_COVER && jpg && jl) {
-        diag_cover_done = 1;
-        unsigned hd = 0, vd = 0, samples = 0;
-        if (px) {
-            for (int y = 12; y + 12 < h; y += 25)
-                for (int x = 12; x + 12 < w; x += 25) {
-                    unsigned k = (unsigned)y * (unsigned)w + (unsigned)x;
-                    hd += pix_delta(px[k], px[k + 8]);
-                    vd += pix_delta(px[k], px[k + 8 * w]);
-                    samples++;
-                }
-        }
-        char detail[550];
-        int len = snprintf(detail, sizeof(detail),
-            "Orbita COVERDIAG 1 (somente dados de imagem)\n"
-            "produto=%s\norigem=%s\njpeg_bytes=%u\njpeg_crc32=%08x\n"
-            "decodificou=%s\ndimensoes=%dx%d\n"
-            "pixels_12_12=%08x\npixels_88_130=%08x\npixels_160_250=%08x\n"
-            "delta_horizontal_medio=%u\ndelta_vertical_medio=%u\n"
-            "Para verificar a origem envie tambem XC360/COVERS/%s.JPG\n",
-            j->product, from_net ? "servidor" : j->on_disk ? "cache_usb" : "servidor",
-            (unsigned)jl, jpg_crc32(jpg, jl), px ? "sim" : "nao", w, h,
-            px ? px[12*w + 12] : 0u, px ? px[130*w + 88] : 0u,
-            px ? px[250*w + 160] : 0u,
-            samples ? hd / samples : 0u, samples ? vd / samples : 0u,
-            j->product);
-        if (len > 0 && len < (int)sizeof(detail)) {
-            if (xc_store_save("COVERDIAG.TXT", detail, (size_t)len) != 0)
-                xc_log("[capas] falhou ao gravar COVERDIAG.TXT (pendrive)");
-            else
-                xc_log("[capas] COVERDIAG.TXT gravado: %s JPEG %u bytes, decode %s",
-                       j->product, (unsigned)jl, px ? "ok" : "falhou");
-        }
-    }
     free(jpg);
     uint64_t now = xcn_now_ms();
     xccp_lock();
     ent_t *e = ent_find(j->product);
     if (rc == 0 && !from_net) g_st.disk_hits++;
-    if (rc == 0 && j->decode && !px) {
-        g_st.decode_errors++;
-        /* A cached JPEG may pass the magic/header checks yet be truncated
-         * internally. If decoding fails, discard its cached index bit and
-         * retry from HTTPS on the next attempt instead of reading the same
-         * broken file five times. This also covers a bad network response
-         * that had just been saved as a JPEG. */
-        if (e) {
-            e->disk &= (uint8_t)~bit;
-            g_idx_dirty++;
-        }
-    }
+    if (rc == 0 && j->decode && !px) g_st.decode_errors++;
     int failed = rc != 0 || (j->decode && !px);
     if (e) {
         if (failed) {
