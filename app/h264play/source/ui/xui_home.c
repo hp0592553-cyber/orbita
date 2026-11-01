@@ -376,7 +376,6 @@ static void draw_card(xui_view_t *v, xui_canvas_t *c, const xui_home_data_t *d, 
     }
     if (it->flags & XUI_IT_NOACCESS) {
         /* Browse sem assinatura: a arte é visível, o streaming não é liberado. */
-        xui_fill_a(c, x, y, w, h, XUI_C_BG, 72);
         xui_round_rect(c, x + 6, y + 6, w - 12, 24, 3, XUI_C_PANEL, 220);
         xui_text(c, XUI_F_LABEL, x + 10, y + 23, XUI_C_DIM, L("SEM ACESSO"), 0, w - 20);
     }
