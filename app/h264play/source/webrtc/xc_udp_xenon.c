@@ -37,6 +37,7 @@
 #include "mbedtls/entropy.h"
 
 #include "xc_udp_xenon.h"
+#include "xc_udp_tx_budget.h"
 #include "xcw_port.h"
 
 #define XUS_SOCKS 4
@@ -168,17 +169,29 @@ static void do_close(xus_t *s) {
 }
 
 void xcw_net_step(void) {
+    static unsigned first_socket = 0;
     if (g_net_pir != cur_pir()) {
         g_net_pir = cur_pir();
         lwsync();
     }
-    for (int h = 1; h <= XUS_SOCKS; h++) {
+    /*
+     * This is the same hw1 thread that polls Wi-Fi and USB gamepads.
+     * Never chase tx_w while the WebRTC producer is still adding packets:
+     * take a bounded snapshot per socket, then return to network_poll /
+     * usb_do_poll. A slow or busy UDP sender must not starve controller input.
+     * Rotating the first socket prevents a continuously busy handle from
+     * always receiving the first slice.
+     */
+    for (int off = 0; off < XUS_SOCKS; off++) {
+        int h = 1 + (int)((first_socket + (unsigned)off) % XUS_SOCKS);
         xus_t *s = &g_s[h];
         switch (s->st) {
             case XS_REQ_OPEN: do_open(s); break;
             case XS_REQ_CLOSE: do_close(s); break;
-            case XS_OPEN:
-                while (s->tx_r != s->tx_w) {
+            case XS_OPEN: {
+                uint32_t tx_end = xcw_udp_tx_batch_end(
+                    s->tx_r, s->tx_w, XCW_UDP_TX_SOCKET_BUDGET);
+                while (s->tx_r != tx_end) {
                     lwsync();   /* see the producer's slot contents */
                     xus_dgram_t *d = &s->tx[s->tx_r & (XUS_TX_SLOTS - 1)];
                     raw_send(s, d->ip, d->port, d->data, d->len);
@@ -186,9 +199,11 @@ void xcw_net_step(void) {
                     s->tx_r++;
                 }
                 break;
+            }
             default: break;
         }
     }
+    first_socket = (first_socket + 1u) % XUS_SOCKS;
 }
 
 void xcw_net_set_pump(void (*pump)(void)) { g_pump = pump; }
